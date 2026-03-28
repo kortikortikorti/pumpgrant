@@ -124,8 +124,23 @@ export async function markVerified(username: string, walletAddress?: string): Pr
     v.verified = true;
     v.verified_at = new Date().toISOString();
     if (walletAddress) v.wallet_address = walletAddress;
-    await redis.set(`verification:${username.toLowerCase()}`, v);
+    const pipeline = redis.pipeline();
+    pipeline.set(`verification:${username.toLowerCase()}`, v);
+    if (walletAddress) {
+      pipeline.set(`wallet_to_reddit:${walletAddress}`, username.toLowerCase());
+    }
+    await pipeline.exec();
   }
+}
+
+export async function getVerificationByWallet(walletAddress: string): Promise<{ verified: boolean; reddit_username: string | null }> {
+  const username = await redis.get<string>(`wallet_to_reddit:${walletAddress}`);
+  if (!username) return { verified: false, reddit_username: null };
+  const v = await getVerificationByUser(username);
+  if (v && v.verified) {
+    return { verified: true, reddit_username: v.reddit_username };
+  }
+  return { verified: false, reddit_username: null };
 }
 
 // ── Claims ──

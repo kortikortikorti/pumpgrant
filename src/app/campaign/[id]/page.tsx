@@ -30,7 +30,7 @@ export default function CampaignPage() {
     );
   }
 
-  if (!data?.campaign) {
+  if (!data || data.error) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <p className="text-gray-500">Campaign not found</p>
@@ -38,7 +38,10 @@ export default function CampaignPage() {
     );
   }
 
-  const { campaign, feeEvents, claims } = data;
+  // API returns { ...campaign, claims } — campaign fields are at top level
+  const campaign = data;
+  const claims = data.claims;
+  const feeEvents = data.feeEvents;
   const available = campaign.total_fees_accumulated - campaign.total_fees_claimed;
 
   return (
@@ -63,6 +66,26 @@ export default function CampaignPage() {
             <p className="text-sm text-gray-400 mb-2">{campaign.token_description}</p>
           )}
           <RedditBadge username={campaign.beneficiary_reddit} size="lg" />
+          <div className="flex items-center gap-2 mt-2">
+            <a
+              href={`https://pump.fun/coin/${campaign.token_address}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-purple-500/10 border border-purple-500/20 px-3 py-1.5 text-xs font-medium text-purple-400 hover:bg-purple-500/20 transition-colors"
+            >
+              View on pump.fun
+              <ExternalLink className="h-3 w-3" />
+            </a>
+            <a
+              href={`https://solscan.io/token/${campaign.token_address}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 rounded-lg bg-blue-500/10 border border-blue-500/20 px-3 py-1.5 text-xs font-medium text-blue-400 hover:bg-blue-500/20 transition-colors"
+            >
+              View on Solscan
+              <ExternalLink className="h-3 w-3" />
+            </a>
+          </div>
         </div>
       </div>
 

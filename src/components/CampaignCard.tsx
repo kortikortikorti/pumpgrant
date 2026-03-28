@@ -8,6 +8,7 @@ interface Campaign {
   id: string;
   token_name: string;
   token_ticker: string;
+  token_address: string;
   token_image_url: string | null;
   beneficiary_reddit: string;
   total_fees_accumulated: number;
@@ -61,12 +62,24 @@ export default function CampaignCard({ campaign }: { campaign: Campaign }) {
           </div>
         </div>
 
-        {campaign.status === 'active' && (
-          <div className="mt-3 flex items-center gap-1.5">
-            <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
-            <span className="text-xs text-green-500">Active</span>
-          </div>
-        )}
+        <div className="mt-3 flex items-center justify-between">
+          {campaign.status === 'active' && (
+            <div className="flex items-center gap-1.5">
+              <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+              <span className="text-xs text-green-500">Active</span>
+            </div>
+          )}
+          <a
+            href={`https://pump.fun/coin/${campaign.token_address}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="flex items-center gap-1 text-xs text-purple-400 hover:text-purple-300 transition-colors"
+          >
+            pump.fun
+            <ArrowUpRight className="h-3 w-3" />
+          </a>
+        </div>
       </div>
     </Link>
   );

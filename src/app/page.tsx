@@ -17,6 +17,7 @@ interface Campaign {
   id: string;
   token_name: string;
   token_ticker: string;
+  token_address: string;
   token_image_url: string | null;
   beneficiary_reddit: string;
   total_fees_accumulated: number;

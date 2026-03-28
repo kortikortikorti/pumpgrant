@@ -3,26 +3,25 @@
 import { useEffect, useState } from 'react';
 import { Wallet, Plus, ExternalLink } from 'lucide-react';
 import Link from 'next/link';
+import { useWallet } from '@solana/wallet-adapter-react';
+import { useWalletModal } from '@solana/wallet-adapter-react-ui';
 import CampaignCard from '@/components/CampaignCard';
 
-// Mock: simulate a connected wallet
-const MOCK_CREATOR_WALLET = 'DRpbCBMxVnDK7maPGv7USsFnchhY1rkc3YprFLzJ6KDM';
-
 export default function DashboardPage() {
-  const [connected, setConnected] = useState(false);
+  const { connected, publicKey } = useWallet();
+  const { setVisible } = useWalletModal();
   const [campaigns, setCampaigns] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const connectWallet = async () => {
-    setLoading(true);
-    await new Promise(r => setTimeout(r, 800));
-    setConnected(true);
-
-    const res = await fetch(`/api/campaigns?creator_wallet=${MOCK_CREATOR_WALLET}`);
-    const data = await res.json();
-    setCampaigns(data);
-    setLoading(false);
-  };
+  useEffect(() => {
+    if (connected && publicKey) {
+      setLoading(true);
+      fetch(`/api/campaigns?wallet=${publicKey.toBase58()}`)
+        .then(r => r.json())
+        .then(data => { setCampaigns(data); setLoading(false); })
+        .catch(() => setLoading(false));
+    }
+  }, [connected, publicKey]);
 
   if (!connected) {
     return (
@@ -36,16 +35,11 @@ export default function DashboardPage() {
             Connect your Solana wallet to view and manage your PumpGrant campaigns.
           </p>
           <button
-            onClick={connectWallet}
-            disabled={loading}
+            onClick={() => setVisible(true)}
             className="w-full flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-purple-500 to-purple-600 py-3.5 text-sm font-semibold text-white hover:opacity-90 transition-opacity disabled:opacity-50"
           >
-            {loading ? (
-              <div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
-            ) : (
-              <Wallet className="h-4 w-4" />
-            )}
-            {loading ? 'Connecting...' : 'Connect Wallet'}
+            <Wallet className="h-4 w-4" />
+            Connect Wallet
           </button>
         </div>
       </div>
@@ -58,7 +52,7 @@ export default function DashboardPage() {
         <div>
           <h1 className="text-2xl font-bold text-white">Your Campaigns</h1>
           <p className="text-sm text-gray-500 mt-1">
-            Wallet: <code className="text-purple-400 font-mono">{MOCK_CREATOR_WALLET.slice(0, 6)}...{MOCK_CREATOR_WALLET.slice(-4)}</code>
+            Wallet: <code className="text-purple-400 font-mono">{publicKey?.toBase58().slice(0, 6)}...{publicKey?.toBase58().slice(-4)}</code>
           </p>
         </div>
         <Link

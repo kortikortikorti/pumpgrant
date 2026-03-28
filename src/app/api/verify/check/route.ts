@@ -16,6 +16,7 @@ export async function POST(request: NextRequest) {
   let username = (body.reddit_username || '').trim().replace(/^u\//, '');
   const foundCode = body.found_code; // The code the client found on Reddit
   const clientVerified = body.client_verified;
+  const walletAddress = (body.wallet_address || '').trim();
 
   if (!username) {
     return NextResponse.json({ error: 'Missing username' }, { status: 400 });
@@ -23,6 +24,10 @@ export async function POST(request: NextRequest) {
 
   if (!foundCode || !clientVerified) {
     return NextResponse.json({ verified: false, error: 'Missing verification data' }, { status: 400 });
+  }
+
+  if (!walletAddress) {
+    return NextResponse.json({ verified: false, error: 'Wallet address required. Connect your wallet before verifying.' }, { status: 400 });
   }
 
   // Check if already verified
@@ -38,7 +43,7 @@ export async function POST(request: NextRequest) {
 
   // EXACT match check: the found code must match the stored code
   if (foundCode === existing.verification_code) {
-    await markVerified(username);
+    await markVerified(username, walletAddress);
     return NextResponse.json({ verified: true, message: 'Account verified!' });
   }
 
