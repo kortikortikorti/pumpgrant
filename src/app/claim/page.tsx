@@ -65,31 +65,86 @@ export default function ClaimPage() {
   const [postUrl, setPostUrl] = useState('');
   const [showPostUrlInput, setShowPostUrlInput] = useState(false);
 
+  const PUMP_CODE_RE = /PUMP-[A-Z0-9]{4}-GRANT/;
+
+  // Check Reddit from browser using JSONP-style fetch
+  const checkRedditProfile = async (): Promise<string | null> => {
+    // Try fetching user's posts via Reddit JSON API
+    // Reddit .json endpoints work from browsers
+    const urls = [
+      `https://www.reddit.com/user/${cleanUsername}/submitted.json?limit=25&raw_json=1`,
+      `https://www.reddit.com/user/${cleanUsername}/overview.json?limit=25&raw_json=1`,
+    ];
+    for (const url of urls) {
+      try {
+        const res = await fetch(url);
+        if (res.ok) {
+          const text = await res.text();
+          const match = text.match(PUMP_CODE_RE);
+          if (match) return match[0];
+        }
+      } catch {}
+    }
+    return null;
+  };
+
+  // Check a specific Reddit post URL
+  const checkRedditPostUrl = async (url: string): Promise<string | null> => {
+    try {
+      let cleanUrl = url.split('?')[0].replace(/\/+$/, '');
+      if (!cleanUrl.endsWith('.json')) cleanUrl += '.json';
+      cleanUrl += '?raw_json=1';
+      const res = await fetch(cleanUrl);
+      if (res.ok) {
+        const text = await res.text();
+        const match = text.match(PUMP_CODE_RE);
+        if (match && text.toLowerCase().includes(cleanUsername.toLowerCase())) {
+          return match[0];
+        }
+      }
+    } catch {}
+    return null;
+  };
+
   // Step 3: Check verification
   const handleVerify = async () => {
     setVerifying(true);
     setVerifyError('');
     try {
-      const res = await fetch('/api/verify/check', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reddit_username: cleanUsername, code, post_url: postUrl || undefined }),
-      });
-      const data = await res.json();
-      if (data.verified) {
-        setVerified(true);
-        setStep(4);
-        fetchCampaigns();
-        return;
+      let foundCode: string | null = null;
+
+      // If user provided a post URL, check that first
+      if (postUrl) {
+        foundCode = await checkRedditPostUrl(postUrl);
       }
-      if (data.needs_post_url) {
-        setShowPostUrlInput(true);
-        setVerifyError('Could not find the code automatically. Please paste the link to your Reddit post below and try again.');
-      } else {
-        setVerifyError(data.error || 'Code not found. Make sure you posted it publicly on your profile.');
+
+      // Try profile check
+      if (!foundCode) {
+        foundCode = await checkRedditProfile();
       }
+
+      if (foundCode) {
+        // Tell server we verified
+        const res = await fetch('/api/verify/check', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reddit_username: cleanUsername, found_code: foundCode, client_verified: true }),
+        });
+        const data = await res.json();
+        if (data.verified) {
+          setVerified(true);
+          setStep(4);
+          fetchCampaigns();
+          return;
+        }
+      }
+
+      // Not found — ask for post URL
+      setShowPostUrlInput(true);
+      setVerifyError('Could not find the code automatically. Paste the link to your Reddit post below and try again.');
     } catch {
-      setVerifyError('Network error. Please try again.');
+      setShowPostUrlInput(true);
+      setVerifyError('Could not check Reddit. Paste your Reddit post link below.');
     } finally {
       setVerifying(false);
     }

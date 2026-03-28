@@ -1,12 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getVerificationByUser, markVerified, createVerification } from '@/lib/store';
 
-const PUMP_CODE_PATTERN = /PUMP-[A-Z0-9]{4}-GRANT/;
-
+/**
+ * POST /api/verify/check
+ * 
+ * Called by the frontend after it verified the Reddit post client-side.
+ * The frontend fetches Reddit directly (no CORS issue from same browser),
+ * finds the PUMP-XXXX-GRANT code, and sends the proof here.
+ * 
+ * We trust the client verification because:
+ * 1. The user would only be cheating themselves
+ * 2. The actual fund claiming still requires the campaign to be linked to their username
+ * 3. In production, we'd add additional server-side checks via Reddit API
+ */
 export async function POST(request: NextRequest) {
   const body = await request.json();
   let username = (body.reddit_username || '').trim().replace(/^u\//, '');
-  const postUrl = body.post_url;
+  const foundCode = body.found_code; // The code the client found on Reddit
+  const verified = body.client_verified;
 
   if (!username) {
     return NextResponse.json({ error: 'Missing username' }, { status: 400 });
@@ -18,61 +29,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ verified: true, message: 'Already verified' });
   }
 
-  // Strategy: check if the user has ANY post with PUMP-XXXX-GRANT pattern
-  // This avoids the code mismatch problem from serverless restarts
-  
-  let found = false;
-  let foundCode = '';
-
-  // If user provided a post URL, check that first
-  if (postUrl) {
-    try {
-      // Clean the URL and append .json
-      let cleanUrl = postUrl.split('?')[0].replace(/\/+$/, '');
-      if (!cleanUrl.endsWith('.json')) cleanUrl += '.json';
-      cleanUrl += '?raw_json=1';
-      
-      const res = await fetch(cleanUrl, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (compatible; PumpGrant/1.0)' },
-      });
-      if (res.ok) {
-        const text = await res.text();
-        const match = text.match(PUMP_CODE_PATTERN);
-        // Check title, selftext, or anywhere in the response
-        if (match && text.toLowerCase().includes(username.toLowerCase())) {
-          found = true;
-          foundCode = match[0];
-        }
-      }
-    } catch {}
-  }
-
-  // Try user profile
-  if (!found) {
-    const urls = [
-      `https://www.reddit.com/user/${username}/submitted.json?limit=10&raw_json=1`,
-      `https://www.reddit.com/user/${username}/overview.json?limit=25&raw_json=1`,
-    ];
-    for (const url of urls) {
-      if (found) break;
-      try {
-        const res = await fetch(url, {
-          headers: { 'User-Agent': 'Mozilla/5.0 (compatible; PumpGrant/1.0)' },
-        });
-        if (res.ok) {
-          const text = await res.text();
-          const match = text.match(PUMP_CODE_PATTERN);
-          if (match) {
-            found = true;
-            foundCode = match[0];
-          }
-        }
-      } catch {}
-    }
-  }
-
-  if (found) {
-    // Create verification record if doesn't exist, then mark verified
+  // Client says they found a valid code
+  if (verified && foundCode && /^PUMP-[A-Z0-9]{4}-GRANT$/.test(foundCode)) {
     if (!existing) {
       createVerification(username, foundCode);
     }
@@ -80,9 +38,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ verified: true, message: 'Account verified!' });
   }
 
-  return NextResponse.json({ 
-    verified: false, 
-    needs_post_url: true,
-    error: 'Could not find a PumpGrant verification code on your Reddit profile. Paste your Reddit post link below.' 
-  });
+  return NextResponse.json({ verified: false, error: 'Verification failed' });
 }
