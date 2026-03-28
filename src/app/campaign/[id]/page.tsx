@@ -2,10 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { Lock, Copy, Check, ExternalLink, TrendingUp, Coins, ArrowDown, BarChart3 } from 'lucide-react';
+import { Lock, Copy, Check, ExternalLink, TrendingUp, Coins, ArrowDown, BarChart3, Loader2 } from 'lucide-react';
 import RedditBadge from '@/components/RedditBadge';
 import StatsCard from '@/components/StatsCard';
-import WalletDisplay from '@/components/WalletDisplay';
 import FeeTimeline from '@/components/FeeTimeline';
 
 export default function CampaignPage() {
@@ -13,36 +12,62 @@ export default function CampaignPage() {
   const id = params.id as string;
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    fetch(`/api/campaigns/${id}`)
-      .then(r => r.json())
-      .then(d => { setData(d); setLoading(false); })
-      .catch(() => setLoading(false));
+    const fetchCampaign = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(`/api/campaigns/${id}`);
+        if (!res.ok) {
+          setError('Campaign not found');
+          setLoading(false);
+          return;
+        }
+        const d = await res.json();
+        if (d.error) {
+          setError(d.error);
+        } else {
+          setData(d);
+        }
+      } catch (err) {
+        console.error('Failed to fetch campaign:', err);
+        setError('Failed to load campaign. Please try again.');
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchCampaign();
   }, [id]);
 
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-[#FF4500] border-t-transparent" />
+        <div className="text-center">
+          <Loader2 className="h-8 w-8 animate-spin text-purple-400 mx-auto mb-3" />
+          <p className="text-sm text-gray-400">Loading campaign...</p>
+        </div>
       </div>
     );
   }
 
-  if (!data || data.error) {
+  if (error || !data) {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
-        <p className="text-gray-500">Campaign not found</p>
+        <div className="text-center">
+          <p className="text-gray-500 text-lg mb-2">Campaign not found</p>
+          <p className="text-gray-600 text-sm">{error || 'The campaign you\'re looking for doesn\'t exist.'}</p>
+        </div>
       </div>
     );
   }
 
-  // API returns { ...campaign, claims } — campaign fields are at top level
   const campaign = data;
-  const claims = data.claims;
-  const feeEvents = data.feeEvents;
-  const available = campaign.total_fees_accumulated - campaign.total_fees_claimed;
+  const claims = data.claims || [];
+  const feeEvents = data.feeEvents || [];
+  const available = (campaign.total_fees_accumulated || 0) - (campaign.total_fees_claimed || 0);
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-24">
@@ -52,7 +77,7 @@ export default function CampaignPage() {
           <img src={campaign.token_image_url} alt={campaign.token_name} className="h-16 w-16 rounded-xl bg-[#222]" />
         ) : (
           <div className="flex h-16 w-16 items-center justify-center rounded-xl bg-gradient-to-br from-purple-500/20 to-purple-600/20 text-purple-400 font-bold text-xl">
-            {campaign.token_ticker.slice(0, 2)}
+            {(campaign.token_ticker || '??').slice(0, 2)}
           </div>
         )}
         <div className="flex-1">
@@ -106,13 +131,13 @@ export default function CampaignPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <StatsCard
           label="Accumulated"
-          value={`${campaign.total_fees_accumulated.toFixed(3)} SOL`}
+          value={`${(campaign.total_fees_accumulated || 0).toFixed(3)} SOL`}
           icon={<Coins className="h-4 w-4" />}
           color="purple"
         />
         <StatsCard
           label="Claimed"
-          value={`${campaign.total_fees_claimed.toFixed(3)} SOL`}
+          value={`${(campaign.total_fees_claimed || 0).toFixed(3)} SOL`}
           icon={<ArrowDown className="h-4 w-4" />}
           color="blue"
         />
@@ -124,7 +149,7 @@ export default function CampaignPage() {
         />
         <StatsCard
           label="Total Events"
-          value={feeEvents?.length || 0}
+          value={feeEvents.length || 0}
           icon={<BarChart3 className="h-4 w-4" />}
           color="orange"
         />
@@ -162,12 +187,12 @@ export default function CampaignPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div>
           <h2 className="text-lg font-semibold text-white mb-4">Recent Fee Events</h2>
-          <FeeTimeline events={feeEvents || []} />
+          <FeeTimeline events={feeEvents} />
         </div>
 
         <div>
           <h2 className="text-lg font-semibold text-white mb-4">Claim History</h2>
-          {claims && claims.length > 0 ? (
+          {claims.length > 0 ? (
             <div className="space-y-2">
               {claims.map((claim: any) => (
                 <div key={claim.id} className="flex items-center justify-between rounded-lg bg-[#0a0a0a] border border-[#1a1a1a] px-4 py-3">
@@ -178,7 +203,7 @@ export default function CampaignPage() {
                     <p className="text-xs text-gray-600 font-mono">{claim.tx_signature?.slice(0, 16)}...</p>
                   </div>
                   <span className="text-sm font-semibold text-[#FF4500]">
-                    {claim.amount_sol.toFixed(3)} SOL
+                    {(claim.amount_sol || 0).toFixed(3)} SOL
                   </span>
                 </div>
               ))}
