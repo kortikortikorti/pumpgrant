@@ -1,20 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
 import getDb from '@/lib/db';
 import { decryptPrivateKey } from '@/lib/crypto';
 
 export async function POST(request: NextRequest) {
-  const session = await getServerSession(authOptions);
-
   const body = await request.json();
-  const redditUsername = body.username || (session?.user as any)?.redditUsername;
+  const redditUsername = body.username;
 
   if (!redditUsername) {
-    return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
+    return NextResponse.json({ error: 'Username required' }, { status: 400 });
   }
 
+  // Verify the user is verified
   const db = getDb();
+  const verification = db.prepare('SELECT * FROM verifications WHERE reddit_username = ? AND verified = 1').get(redditUsername) as any;
+
+  if (!verification) {
+    return NextResponse.json({ error: 'Account not verified' }, { status: 401 });
+  }
+
   const wallet = db.prepare('SELECT * FROM beneficiary_wallets WHERE reddit_username = ?').get(redditUsername) as any;
 
   if (!wallet) {
@@ -23,7 +26,6 @@ export async function POST(request: NextRequest) {
 
   try {
     const privateKeyBytes = decryptPrivateKey(wallet.encrypted_private_key, redditUsername);
-    // Return as JSON array (same format as Solana CLI keypair files)
     const keyArray = Array.from(privateKeyBytes);
 
     return NextResponse.json({
