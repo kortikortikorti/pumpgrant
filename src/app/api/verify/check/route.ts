@@ -27,13 +27,18 @@ export async function POST(request: NextRequest) {
   // If user provided a post URL, check that first
   if (postUrl) {
     try {
-      const jsonUrl = postUrl.replace(/\/?$/, '.json') + '?raw_json=1';
-      const res = await fetch(jsonUrl, {
+      // Clean the URL and append .json
+      let cleanUrl = postUrl.split('?')[0].replace(/\/+$/, '');
+      if (!cleanUrl.endsWith('.json')) cleanUrl += '.json';
+      cleanUrl += '?raw_json=1';
+      
+      const res = await fetch(cleanUrl, {
         headers: { 'User-Agent': 'Mozilla/5.0 (compatible; PumpGrant/1.0)' },
       });
       if (res.ok) {
         const text = await res.text();
         const match = text.match(PUMP_CODE_PATTERN);
+        // Check title, selftext, or anywhere in the response
         if (match && text.toLowerCase().includes(username.toLowerCase())) {
           found = true;
           foundCode = match[0];
