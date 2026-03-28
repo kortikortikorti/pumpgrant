@@ -7,8 +7,8 @@ export async function POST(request: NextRequest) {
   let username = (body.reddit_username || '').trim().replace(/^u\//, '');
   if (!username) return NextResponse.json({ error: 'Username required' }, { status: 400 });
 
-  // Check existing pending verification
-  const existing = getVerificationByUser(username);
+  // Check existing verification
+  const existing = await getVerificationByUser(username);
   if (existing && !existing.verified) {
     return NextResponse.json({ code: existing.verification_code });
   }
@@ -18,6 +18,6 @@ export async function POST(request: NextRequest) {
 
   // Generate new code
   const code = 'PUMP-' + crypto.randomBytes(4).toString('hex').toUpperCase().slice(0, 4) + '-GRANT';
-  createVerification(username, code);
+  await createVerification(username, code);
   return NextResponse.json({ code });
 }

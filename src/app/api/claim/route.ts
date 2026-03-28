@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getVerificationByUser, getCampaigns, createClaim } from '@/lib/store';
+import { getVerificationByUser, getCampaignById, createClaim } from '@/lib/store';
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
@@ -11,14 +11,13 @@ export async function POST(request: NextRequest) {
 
   // Verify the user is verified
   const username = reddit_username.replace(/^u\//, '');
-  const verification = getVerificationByUser(username);
+  const verification = await getVerificationByUser(username);
   if (!verification || !verification.verified) {
     return NextResponse.json({ error: 'Reddit account not verified' }, { status: 401 });
   }
 
   // Find campaign
-  const campaigns = getCampaigns();
-  const campaign = campaigns.find(c => c.id === campaign_id);
+  const campaign = await getCampaignById(campaign_id);
   if (!campaign) {
     return NextResponse.json({ error: 'Campaign not found' }, { status: 404 });
   }
@@ -34,7 +33,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Create claim record (actual SOL transfer would happen here in production)
-  const claim = createClaim({
+  const claim = await createClaim({
     campaign_id,
     reddit_username: username,
     wallet_address,

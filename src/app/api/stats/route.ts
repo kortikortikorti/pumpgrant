@@ -2,8 +2,8 @@ import { NextResponse } from 'next/server';
 import { getCampaigns, getClaims } from '@/lib/store';
 
 export async function GET() {
-  const campaigns = getCampaigns();
-  const claims = getClaims();
+  const campaigns = await getCampaigns();
+  const claims = await getClaims();
   const totalDonated = claims.reduce((sum, c) => sum + c.amount_sol, 0);
 
   return NextResponse.json({

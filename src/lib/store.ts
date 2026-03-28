@@ -1,31 +1,14 @@
 /**
- * Simple JSON file store for Vercel serverless (no native modules)
- * Uses /tmp for serverless compatibility
+ * Upstash Redis store for Vercel serverless
+ * Replaces the old /tmp JSON file store
  */
-import fs from 'fs';
+import { Redis } from '@upstash/redis';
 import crypto from 'crypto';
 
-const STORE_DIR = '/tmp/pumpgrant';
-
-function ensureDir() {
-  if (!fs.existsSync(STORE_DIR)) {
-    fs.mkdirSync(STORE_DIR, { recursive: true });
-  }
-}
-
-function loadFile<T>(name: string, defaultVal: T[]): T[] {
-  ensureDir();
-  const p = `${STORE_DIR}/${name}.json`;
-  try {
-    if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf8'));
-  } catch {}
-  return defaultVal;
-}
-
-function saveFile<T>(name: string, data: T[]) {
-  ensureDir();
-  fs.writeFileSync(`${STORE_DIR}/${name}.json`, JSON.stringify(data, null, 2));
-}
+const redis = new Redis({
+  url: process.env.KV_REST_API_URL!,
+  token: process.env.KV_REST_API_TOKEN!,
+});
 
 function genId(): string {
   return crypto.randomBytes(8).toString('hex');
@@ -47,24 +30,62 @@ export interface Campaign {
   created_at: string;
 }
 
-export function getCampaigns(): Campaign[] { return loadFile('campaigns', []); }
-export function saveCampaigns(c: Campaign[]) { saveFile('campaigns', c); }
-export function getCampaignById(id: string): Campaign | undefined { return getCampaigns().find(c => c.id === id); }
-export function getCampaignByToken(token: string): Campaign | undefined { return getCampaigns().find(c => c.token_address === token); }
+export async function getCampaigns(): Promise<Campaign[]> {
+  const ids = await redis.smembers('campaigns');
+  if (!ids || ids.length === 0) return [];
+  const pipeline = redis.pipeline();
+  for (const id of ids) {
+    pipeline.get(`campaign:${id}`);
+  }
+  const results = await pipeline.exec();
+  return results.filter(Boolean) as Campaign[];
+}
 
-export function createCampaign(data: Omit<Campaign, 'id' | 'total_fees_accumulated' | 'total_fees_claimed' | 'status' | 'created_at'>): Campaign {
-  const campaigns = getCampaigns();
+export async function getCampaignById(id: string): Promise<Campaign | null> {
+  const data = await redis.get<Campaign>(`campaign:${id}`);
+  return data || null;
+}
+
+export async function getCampaignByToken(token: string): Promise<Campaign | null> {
+  const id = await redis.get<string>(`campaign_by_token:${token}`);
+  if (!id) return null;
+  return getCampaignById(id);
+}
+
+export async function getCampaignsByReddit(username: string): Promise<Campaign[]> {
+  const ids = await redis.smembers(`campaign_by_reddit:${username.toLowerCase()}`);
+  if (!ids || ids.length === 0) return [];
+  const pipeline = redis.pipeline();
+  for (const id of ids) {
+    pipeline.get(`campaign:${id}`);
+  }
+  const results = await pipeline.exec();
+  return results.filter(Boolean) as Campaign[];
+}
+
+export async function createCampaign(
+  data: Omit<Campaign, 'id' | 'total_fees_accumulated' | 'total_fees_claimed' | 'status' | 'created_at'>
+): Promise<Campaign> {
+  const id = genId();
   const campaign: Campaign = {
     ...data,
-    id: genId(),
+    id,
     total_fees_accumulated: 0,
     total_fees_claimed: 0,
     status: 'active',
     created_at: new Date().toISOString(),
   };
-  campaigns.push(campaign);
-  saveCampaigns(campaigns);
+  const pipeline = redis.pipeline();
+  pipeline.set(`campaign:${id}`, campaign);
+  pipeline.sadd('campaigns', id);
+  pipeline.set(`campaign_by_token:${data.token_address}`, id);
+  pipeline.sadd(`campaign_by_reddit:${data.beneficiary_reddit.toLowerCase()}`, id);
+  await pipeline.exec();
   return campaign;
+}
+
+export async function updateCampaign(campaign: Campaign): Promise<void> {
+  await redis.set(`campaign:${campaign.id}`, campaign);
 }
 
 // ── Verifications ──
@@ -78,15 +99,12 @@ export interface Verification {
   verified_at: string | null;
 }
 
-export function getVerifications(): Verification[] { return loadFile('verifications', []); }
-export function saveVerifications(v: Verification[]) { saveFile('verifications', v); }
-
-export function getVerificationByUser(username: string): Verification | undefined {
-  return getVerifications().find(v => v.reddit_username.toLowerCase() === username.toLowerCase());
+export async function getVerificationByUser(username: string): Promise<Verification | null> {
+  const data = await redis.get<Verification>(`verification:${username.toLowerCase()}`);
+  return data || null;
 }
 
-export function createVerification(username: string, code: string): Verification {
-  const verifications = getVerifications();
+export async function createVerification(username: string, code: string): Promise<Verification> {
   const v: Verification = {
     id: genId(),
     reddit_username: username,
@@ -96,19 +114,17 @@ export function createVerification(username: string, code: string): Verification
     created_at: new Date().toISOString(),
     verified_at: null,
   };
-  verifications.push(v);
-  saveVerifications(verifications);
+  await redis.set(`verification:${username.toLowerCase()}`, v);
   return v;
 }
 
-export function markVerified(username: string, walletAddress?: string) {
-  const verifications = getVerifications();
-  const v = verifications.find(v => v.reddit_username.toLowerCase() === username.toLowerCase());
+export async function markVerified(username: string, walletAddress?: string): Promise<void> {
+  const v = await getVerificationByUser(username);
   if (v) {
     v.verified = true;
     v.verified_at = new Date().toISOString();
     if (walletAddress) v.wallet_address = walletAddress;
-    saveVerifications(verifications);
+    await redis.set(`verification:${username.toLowerCase()}`, v);
   }
 }
 
@@ -123,13 +139,41 @@ export interface Claim {
   claimed_at: string;
 }
 
-export function getClaims(): Claim[] { return loadFile('claims', []); }
-export function saveClaims(c: Claim[]) { saveFile('claims', c); }
+export async function getClaims(): Promise<Claim[]> {
+  // Get all campaign IDs, then get claims for each
+  const campaignIds = await redis.smembers('campaigns');
+  if (!campaignIds || campaignIds.length === 0) return [];
+  const allClaimIds: string[] = [];
+  for (const cid of campaignIds) {
+    const claimIds = await redis.smembers(`claims_by_campaign:${cid}`);
+    if (claimIds) allClaimIds.push(...claimIds);
+  }
+  if (allClaimIds.length === 0) return [];
+  const pipeline = redis.pipeline();
+  for (const id of allClaimIds) {
+    pipeline.get(`claim:${id}`);
+  }
+  const results = await pipeline.exec();
+  return results.filter(Boolean) as Claim[];
+}
 
-export function createClaim(data: Omit<Claim, 'id' | 'claimed_at'>): Claim {
-  const claims = getClaims();
-  const claim: Claim = { ...data, id: genId(), claimed_at: new Date().toISOString() };
-  claims.push(claim);
-  saveClaims(claims);
+export async function getClaimsByCampaign(campaignId: string): Promise<Claim[]> {
+  const ids = await redis.smembers(`claims_by_campaign:${campaignId}`);
+  if (!ids || ids.length === 0) return [];
+  const pipeline = redis.pipeline();
+  for (const id of ids) {
+    pipeline.get(`claim:${id}`);
+  }
+  const results = await pipeline.exec();
+  return results.filter(Boolean) as Claim[];
+}
+
+export async function createClaim(data: Omit<Claim, 'id' | 'claimed_at'>): Promise<Claim> {
+  const id = genId();
+  const claim: Claim = { ...data, id, claimed_at: new Date().toISOString() };
+  const pipeline = redis.pipeline();
+  pipeline.set(`claim:${id}`, claim);
+  pipeline.sadd(`claims_by_campaign:${data.campaign_id}`, id);
+  await pipeline.exec();
   return claim;
 }
