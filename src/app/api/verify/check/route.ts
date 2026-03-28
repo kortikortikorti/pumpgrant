@@ -1,68 +1,61 @@
 import { NextRequest, NextResponse } from 'next/server';
-import getDb from '@/lib/db';
-
-async function fetchRedditContent(username: string, type: 'comments' | 'submitted'): Promise<string[]> {
-  const url = `https://www.reddit.com/user/${username}/${type}.json?limit=25`;
-  try {
-    const res = await fetch(url, {
-      headers: {
-        'User-Agent': 'PumpGrant/1.0 (Reddit Verification Bot)',
-      },
-    });
-    if (!res.ok) return [];
-    const data = await res.json();
-    const children = data?.data?.children || [];
-    return children.map((child: any) => {
-      const d = child.data;
-      // Comments have "body", posts have "selftext" and "title"
-      return [d.body || '', d.selftext || '', d.title || ''].join(' ');
-    });
-  } catch {
-    return [];
-  }
-}
+import { getVerificationByUser, markVerified } from '@/lib/store';
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { reddit_username, code } = body;
+  let username = (body.reddit_username || '').trim().replace(/^u\//, '');
+  const code = body.code;
 
-  if (!reddit_username || !code) {
-    return NextResponse.json({ error: 'Missing reddit_username or code' }, { status: 400 });
+  if (!username || !code) {
+    return NextResponse.json({ error: 'Missing username or code' }, { status: 400 });
   }
 
-  const username = reddit_username.replace(/^u\//, '').trim();
-
-  const db = getDb();
-  const verification = db.prepare(
-    'SELECT * FROM verifications WHERE reddit_username = ? AND verification_code = ? AND verified = FALSE'
-  ).get(username, code) as any;
-
+  const verification = getVerificationByUser(username);
   if (!verification) {
-    return NextResponse.json({
-      verified: false,
-      error: 'No pending verification found for this username and code.',
-    });
+    return NextResponse.json({ verified: false, error: 'No verification found. Generate a code first.' });
+  }
+  if (verification.verified) {
+    return NextResponse.json({ verified: true, message: 'Already verified' });
   }
 
-  // Fetch recent comments and posts from Reddit
-  const [comments, posts] = await Promise.all([
-    fetchRedditContent(username, 'comments'),
-    fetchRedditContent(username, 'submitted'),
-  ]);
+  // Check Reddit public profile for the code
+  try {
+    const headers = { 'User-Agent': 'PumpGrant/1.0 verification bot' };
 
-  const allContent = [...comments, ...posts];
-  const found = allContent.some((text) => text.includes(code));
+    // Check comments
+    const commentsRes = await fetch(`https://www.reddit.com/user/${username}/comments.json?limit=25`, { headers });
+    let found = false;
 
-  if (found) {
-    db.prepare(
-      'UPDATE verifications SET verified = TRUE, verified_at = CURRENT_TIMESTAMP WHERE id = ?'
-    ).run(verification.id);
+    if (commentsRes.ok) {
+      const data = await commentsRes.json();
+      const children = data?.data?.children || [];
+      for (const child of children) {
+        const body = child?.data?.body || '';
+        if (body.includes(code)) { found = true; break; }
+      }
+    }
 
-    return NextResponse.json({ verified: true });
+    // Check submitted posts too
+    if (!found) {
+      const postsRes = await fetch(`https://www.reddit.com/user/${username}/submitted.json?limit=25`, { headers });
+      if (postsRes.ok) {
+        const data = await postsRes.json();
+        const children = data?.data?.children || [];
+        for (const child of children) {
+          const title = child?.data?.title || '';
+          const selftext = child?.data?.selftext || '';
+          if (title.includes(code) || selftext.includes(code)) { found = true; break; }
+        }
+      }
+    }
+
+    if (found) {
+      markVerified(username);
+      return NextResponse.json({ verified: true, message: 'Account verified!' });
+    } else {
+      return NextResponse.json({ verified: false, error: 'Code not found on your Reddit profile. Make sure you posted it publicly.' });
+    }
+  } catch (err: any) {
+    return NextResponse.json({ verified: false, error: `Could not check Reddit: ${err.message}` });
   }
-
-  return NextResponse.json({
-    verified: false,
-    error: 'Code not found. Make sure you posted it publicly on your profile.',
-  });
 }

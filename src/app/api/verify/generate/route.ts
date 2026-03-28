@@ -1,72 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
-import getDb from '@/lib/db';
 import crypto from 'crypto';
-
-function generateCode(): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  let code = 'PUMP-';
-  for (let i = 0; i < 4; i++) {
-    code += chars[crypto.randomInt(chars.length)];
-  }
-  code += '-GRANT';
-  return code;
-}
+import { getVerificationByUser, createVerification } from '@/lib/store';
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
-  const { reddit_username } = body;
+  let username = (body.reddit_username || '').trim().replace(/^u\//, '');
+  if (!username) return NextResponse.json({ error: 'Username required' }, { status: 400 });
 
-  if (!reddit_username || typeof reddit_username !== 'string') {
-    return NextResponse.json({ error: 'Missing reddit_username' }, { status: 400 });
+  // Check existing pending verification
+  const existing = getVerificationByUser(username);
+  if (existing && !existing.verified) {
+    return NextResponse.json({ code: existing.verification_code });
+  }
+  if (existing && existing.verified) {
+    return NextResponse.json({ code: existing.verification_code, already_verified: true });
   }
 
-  // Strip u/ prefix if provided
-  const username = reddit_username.replace(/^u\//, '').trim();
-  if (!username || username.length < 1) {
-    return NextResponse.json({ error: 'Invalid username' }, { status: 400 });
-  }
-
-  const db = getDb();
-
-  // Check if there's already a verified entry for this username
-  const existing = db.prepare(
-    'SELECT * FROM verifications WHERE reddit_username = ? AND verified = TRUE'
-  ).get(username) as any;
-
-  if (existing) {
-    return NextResponse.json({
-      already_verified: true,
-      message: 'This Reddit account is already verified.',
-    });
-  }
-
-  // Check for existing pending verification
-  const pending = db.prepare(
-    'SELECT * FROM verifications WHERE reddit_username = ? AND verified = FALSE'
-  ).get(username) as any;
-
-  if (pending) {
-    // Return existing code
-    return NextResponse.json({ code: pending.verification_code });
-  }
-
-  // Generate a unique code
-  let code: string;
-  let attempts = 0;
-  do {
-    code = generateCode();
-    const dup = db.prepare('SELECT id FROM verifications WHERE verification_code = ?').get(code);
-    if (!dup) break;
-    attempts++;
-  } while (attempts < 10);
-
-  if (attempts >= 10) {
-    return NextResponse.json({ error: 'Failed to generate unique code' }, { status: 500 });
-  }
-
-  db.prepare(
-    'INSERT INTO verifications (id, reddit_username, verification_code) VALUES (lower(hex(randomblob(8))), ?, ?)'
-  ).run(username, code);
-
+  // Generate new code
+  const code = 'PUMP-' + crypto.randomBytes(4).toString('hex').toUpperCase().slice(0, 4) + '-GRANT';
+  createVerification(username, code);
   return NextResponse.json({ code });
 }

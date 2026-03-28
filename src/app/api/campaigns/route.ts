@@ -1,69 +1,38 @@
 import { NextRequest, NextResponse } from 'next/server';
-import getDb from '@/lib/db';
-import crypto from 'crypto';
+import { getCampaigns, createCampaign, getCampaignByToken } from '@/lib/store';
 
 export async function GET(request: NextRequest) {
-  const db = getDb();
   const { searchParams } = new URL(request.url);
-  const creatorWallet = searchParams.get('creator_wallet');
-  const redditUsername = searchParams.get('reddit_username');
+  const id = searchParams.get('id');
+  const wallet = searchParams.get('wallet');
+  const reddit = searchParams.get('reddit');
 
-  let campaigns;
-  if (creatorWallet) {
-    campaigns = db.prepare('SELECT * FROM campaigns WHERE creator_wallet = ? ORDER BY created_at DESC').all(creatorWallet);
-  } else if (redditUsername) {
-    campaigns = db.prepare('SELECT * FROM campaigns WHERE beneficiary_reddit = ? ORDER BY created_at DESC').all(redditUsername);
-  } else {
-    campaigns = db.prepare('SELECT * FROM campaigns ORDER BY created_at DESC').all();
+  let campaigns = getCampaigns();
+  if (id) {
+    const c = campaigns.find(c => c.id === id);
+    return c ? NextResponse.json(c) : NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
-
+  if (wallet) campaigns = campaigns.filter(c => c.creator_wallet === wallet);
+  if (reddit) campaigns = campaigns.filter(c => c.beneficiary_reddit.toLowerCase() === reddit.toLowerCase());
   return NextResponse.json(campaigns);
 }
 
 export async function POST(request: NextRequest) {
-  const db = getDb();
   const body = await request.json();
-
-  const {
-    token_address,
-    token_name,
-    token_ticker,
-    token_description,
-    token_image_url,
-    beneficiary_reddit,
-    creator_wallet,
-    creation_method = 'linked',
-  } = body;
-
-  if (!token_name || !beneficiary_reddit) {
+  if (!body.token_address || !body.beneficiary_reddit) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
   }
-
-  // For "linked" flow, token_address comes from user input
-  // For "created" flow, token_address comes from the create-token API
-  const finalTokenAddress = token_address || crypto.randomBytes(32).toString('base64url').slice(0, 44);
-  const feeVaultAddress = 'FEEVau1t' + crypto.randomBytes(24).toString('base64url').slice(0, 36);
-  const id = crypto.randomBytes(8).toString('hex').slice(0, 16);
-
-  const stmt = db.prepare(`
-    INSERT INTO campaigns (id, token_address, token_name, token_ticker, token_description, token_image_url, beneficiary_reddit, creator_wallet, fee_vault_address, creation_method)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
-
-  stmt.run(
-    id,
-    finalTokenAddress,
-    token_name,
-    token_ticker || finalTokenAddress.slice(0, 6).toUpperCase(),
-    token_description || null,
-    token_image_url || null,
-    beneficiary_reddit,
-    creator_wallet || 'unknown',
-    feeVaultAddress,
-    creation_method,
-  );
-
-  const campaign = db.prepare('SELECT * FROM campaigns WHERE id = ?').get(id);
-
+  if (getCampaignByToken(body.token_address)) {
+    return NextResponse.json({ error: 'Campaign for this token already exists' }, { status: 409 });
+  }
+  const campaign = createCampaign({
+    token_address: body.token_address,
+    token_name: body.token_name || 'Unnamed',
+    token_ticker: body.token_ticker || '???',
+    token_description: body.token_description || '',
+    beneficiary_reddit: (body.beneficiary_reddit || '').replace(/^u\//, ''),
+    creator_wallet: body.creator_wallet || 'anonymous',
+    creation_method: body.creation_method || 'linked',
+  });
   return NextResponse.json(campaign, { status: 201 });
 }
