@@ -69,16 +69,13 @@ export default function CampaignCard({ campaign }: { campaign: Campaign }) {
               <span className="text-xs text-green-500">Active</span>
             </div>
           )}
-          <a
-            href={`https://pump.fun/coin/${campaign.token_address}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
+          <button
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.open(`https://pump.fun/coin/${campaign.token_address}`, '_blank'); }}
             className="flex items-center gap-1 text-xs text-purple-400 hover:text-purple-300 transition-colors"
           >
             pump.fun
             <ArrowUpRight className="h-3 w-3" />
-          </a>
+          </button>
         </div>
       </div>
     </Link>
