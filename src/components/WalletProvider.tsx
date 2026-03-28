@@ -1,53 +1,35 @@
 'use client';
 
 import { useMemo, useState, useEffect, type ReactNode } from 'react';
-import dynamic from 'next/dynamic';
+import { ConnectionProvider, WalletProvider as SolanaWalletProvider } from '@solana/wallet-adapter-react';
+import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
+import { PhantomWalletAdapter } from '@solana/wallet-adapter-phantom';
+import { SolflareWalletAdapter } from '@solana/wallet-adapter-solflare';
+import '@solana/wallet-adapter-react-ui/styles.css';
 
 const RPC_ENDPOINT = process.env.NEXT_PUBLIC_SOLANA_RPC || 'https://api.mainnet-beta.solana.com';
 
-// Lazy load wallet adapter to prevent SSR crashes
-function WalletProviderInner({ children }: { children: ReactNode }) {
+export default function WalletProvider({ children }: { children: ReactNode }) {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  const wallets = useMemo(() => {
-    if (typeof window === 'undefined') return [];
-    try {
-      const { PhantomWalletAdapter } = require('@solana/wallet-adapter-phantom');
-      const { SolflareWalletAdapter } = require('@solana/wallet-adapter-solflare');
-      return [new PhantomWalletAdapter(), new SolflareWalletAdapter()];
-    } catch {
-      return [];
-    }
-  }, []);
+  const wallets = useMemo(() => [
+    new PhantomWalletAdapter(),
+    new SolflareWalletAdapter(),
+  ], []);
 
-  if (!mounted) {
-    return <>{children}</>;
-  }
-
-  try {
-    const { ConnectionProvider, WalletProvider: SolanaWalletProvider } = require('@solana/wallet-adapter-react');
-    const { WalletModalProvider } = require('@solana/wallet-adapter-react-ui');
-    require('@solana/wallet-adapter-react-ui/styles.css');
-
-    return (
-      <ConnectionProvider endpoint={RPC_ENDPOINT}>
-        <SolanaWalletProvider wallets={wallets} autoConnect>
-          <WalletModalProvider>
-            {children}
-          </WalletModalProvider>
-        </SolanaWalletProvider>
-      </ConnectionProvider>
-    );
-  } catch (e) {
-    console.error('Wallet adapter failed to load:', e);
-    return <>{children}</>;
-  }
-}
-
-export default function WalletProvider({ children }: { children: ReactNode }) {
-  return <WalletProviderInner>{children}</WalletProviderInner>;
+  // Always render the providers so useWallet() works everywhere
+  // But only autoConnect after mount to avoid SSR issues
+  return (
+    <ConnectionProvider endpoint={RPC_ENDPOINT}>
+      <SolanaWalletProvider wallets={wallets} autoConnect={mounted}>
+        <WalletModalProvider>
+          {children}
+        </WalletModalProvider>
+      </SolanaWalletProvider>
+    </ConnectionProvider>
+  );
 }
