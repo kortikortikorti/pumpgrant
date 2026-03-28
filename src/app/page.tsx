@@ -89,16 +89,16 @@ export default function Home() {
                 <p className="text-xs text-gray-500 mt-1">Active Grants</p>
               </div>
               <div className="rounded-xl border border-[#222] bg-[#141414]/50 backdrop-blur p-4">
-                <p className="text-2xl font-bold text-purple-400">{stats.total_sol_accumulated.toFixed(1)}</p>
-                <p className="text-xs text-gray-500 mt-1">SOL Accumulated</p>
+                <p className="text-2xl font-bold text-purple-400">{(stats.total_sol_donated || 0).toFixed(1)}</p>
+                <p className="text-xs text-gray-500 mt-1">SOL Donated</p>
               </div>
               <div className="rounded-xl border border-[#222] bg-[#141414]/50 backdrop-blur p-4">
-                <p className="text-2xl font-bold text-green-400">{stats.total_sol_claimed.toFixed(1)}</p>
-                <p className="text-xs text-gray-500 mt-1">SOL Claimed</p>
+                <p className="text-2xl font-bold text-green-400">{stats.total_claims || 0}</p>
+                <p className="text-xs text-gray-500 mt-1">Claims</p>
               </div>
               <div className="rounded-xl border border-[#222] bg-[#141414]/50 backdrop-blur p-4">
-                <p className="text-2xl font-bold text-[#FF4500]">{stats.unique_beneficiaries}</p>
-                <p className="text-xs text-gray-500 mt-1">Redditors Funded</p>
+                <p className="text-2xl font-bold text-[#FF4500]">{stats.active_campaigns || 0}</p>
+                <p className="text-xs text-gray-500 mt-1">Active Campaigns</p>
               </div>
             </div>
           )}
