@@ -7,10 +7,9 @@ import { Zap, Lock, Wallet, Gift, TrendingUp, Users, Coins } from 'lucide-react'
 
 interface Stats {
   total_campaigns: number;
-  total_sol_accumulated: number;
-  total_sol_claimed: number;
+  active_campaigns: number;
+  total_sol_donated: number;
   total_claims: number;
-  unique_beneficiaries: number;
 }
 
 interface Campaign {
