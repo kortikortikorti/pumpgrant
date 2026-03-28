@@ -5,6 +5,7 @@ export async function POST(request: NextRequest) {
   const body = await request.json();
   let username = (body.reddit_username || '').trim().replace(/^u\//, '');
   const code = body.code;
+  const clientVerified = body.client_verified;
 
   if (!username || !code) {
     return NextResponse.json({ error: 'Missing username or code' }, { status: 400 });
@@ -17,77 +18,63 @@ export async function POST(request: NextRequest) {
   if (verification.verified) {
     return NextResponse.json({ verified: true, message: 'Already verified' });
   }
+  if (verification.verification_code !== code) {
+    return NextResponse.json({ verified: false, error: 'Code mismatch.' });
+  }
 
+  // If client-side verification was done (browser fetched Reddit and found the code)
+  if (clientVerified === true) {
+    markVerified(username);
+    return NextResponse.json({ verified: true, message: 'Account verified!' });
+  }
+
+  // Try server-side check as fallback
   try {
     const headers: Record<string, string> = { 
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
       'Accept': 'application/json',
     };
 
     let found = false;
+    const endpoints = [
+      `https://www.reddit.com/user/${username}/overview.json?limit=50&raw_json=1`,
+      `https://www.reddit.com/user/${username}/submitted.json?limit=25&raw_json=1`,
+      `https://www.reddit.com/user/${username}/comments.json?limit=25&raw_json=1`,
+    ];
 
-    // Check overview (all activity - posts + comments)
-    const overviewRes = await fetch(`https://www.reddit.com/user/${username}/overview.json?limit=50&raw_json=1`, { headers });
-    
-    if (overviewRes.ok) {
-      const data = await overviewRes.json();
-      const children = data?.data?.children || [];
-      for (const child of children) {
-        const d = child?.data || {};
-        const title = d.title || '';
-        const selftext = d.selftext || '';
-        const commentBody = d.body || '';
-        if (title.includes(code) || selftext.includes(code) || commentBody.includes(code)) {
-          found = true;
-          break;
-        }
-      }
-    }
-
-    // Also try submitted posts specifically
-    if (!found) {
-      const postsRes = await fetch(`https://www.reddit.com/user/${username}/submitted.json?limit=25&raw_json=1`, { headers });
-      if (postsRes.ok) {
-        const data = await postsRes.json();
-        const children = data?.data?.children || [];
-        for (const child of children) {
-          const d = child?.data || {};
-          const title = d.title || '';
-          const selftext = d.selftext || '';
-          if (title.includes(code) || selftext.includes(code)) {
-            found = true;
-            break;
+    for (const url of endpoints) {
+      if (found) break;
+      try {
+        const res = await fetch(url, { headers });
+        if (res.ok) {
+          const data = await res.json();
+          for (const child of (data?.data?.children || [])) {
+            const d = child?.data || {};
+            if ((d.title || '').includes(code) || (d.selftext || '').includes(code) || (d.body || '').includes(code)) {
+              found = true;
+              break;
+            }
           }
         }
-      }
-    }
-
-    // Also try comments specifically  
-    if (!found) {
-      const commentsRes = await fetch(`https://www.reddit.com/user/${username}/comments.json?limit=25&raw_json=1`, { headers });
-      if (commentsRes.ok) {
-        const data = await commentsRes.json();
-        const children = data?.data?.children || [];
-        for (const child of children) {
-          const commentBody = child?.data?.body || '';
-          if (commentBody.includes(code)) {
-            found = true;
-            break;
-          }
-        }
-      }
+      } catch {}
     }
 
     if (found) {
       markVerified(username);
       return NextResponse.json({ verified: true, message: 'Account verified!' });
-    } else {
-      return NextResponse.json({ 
-        verified: false, 
-        error: 'Code not found on your Reddit profile. Make sure you posted it publicly and wait a few seconds for Reddit to update.' 
-      });
     }
-  } catch (err: any) {
-    return NextResponse.json({ verified: false, error: `Could not check Reddit: ${err.message}` });
+
+    // If server check fails, return needs_client_check so frontend can try
+    return NextResponse.json({ 
+      verified: false, 
+      needs_client_check: true,
+      error: 'Server could not reach Reddit. Please click "Verify via Browser" below.' 
+    });
+  } catch {
+    return NextResponse.json({ 
+      verified: false, 
+      needs_client_check: true,
+      error: 'Server could not reach Reddit. Please click "Verify via Browser" below.' 
+    });
   }
 }

@@ -62,11 +62,35 @@ export default function ClaimPage() {
     }
   };
 
+  // Client-side Reddit check (browser fetches Reddit directly)
+  const checkRedditFromBrowser = async (): Promise<boolean> => {
+    try {
+      const endpoints = [
+        `https://www.reddit.com/user/${cleanUsername}/submitted.json?limit=25&raw_json=1`,
+        `https://www.reddit.com/user/${cleanUsername}/comments.json?limit=25&raw_json=1`,
+      ];
+      for (const url of endpoints) {
+        const res = await fetch(url);
+        if (res.ok) {
+          const data = await res.json();
+          for (const child of (data?.data?.children || [])) {
+            const d = child?.data || {};
+            if ((d.title || '').includes(code) || (d.selftext || '').includes(code) || (d.body || '').includes(code)) {
+              return true;
+            }
+          }
+        }
+      }
+    } catch {}
+    return false;
+  };
+
   // Step 3: Check verification
   const handleVerify = async () => {
     setVerifying(true);
     setVerifyError('');
     try {
+      // First try server-side
       const res = await fetch('/api/verify/check', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -77,10 +101,50 @@ export default function ClaimPage() {
         setVerified(true);
         setStep(4);
         fetchCampaigns();
+        return;
+      }
+
+      // If server can't reach Reddit, try from browser
+      if (data.needs_client_check || data.error?.includes('Server could not')) {
+        const found = await checkRedditFromBrowser();
+        if (found) {
+          // Tell server we verified from client
+          const confirmRes = await fetch('/api/verify/check', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reddit_username: cleanUsername, code, client_verified: true }),
+          });
+          const confirmData = await confirmRes.json();
+          if (confirmData.verified) {
+            setVerified(true);
+            setStep(4);
+            fetchCampaigns();
+            return;
+          }
+        }
+        setVerifyError('Code not found on your Reddit profile. Make sure you posted it publicly and try again.');
       } else {
         setVerifyError(data.error || 'Code not found. Make sure you posted it publicly on your profile.');
       }
     } catch {
+      // Network error on server, try browser-only
+      try {
+        const found = await checkRedditFromBrowser();
+        if (found) {
+          const confirmRes = await fetch('/api/verify/check', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ reddit_username: cleanUsername, code, client_verified: true }),
+          });
+          const confirmData = await confirmRes.json();
+          if (confirmData.verified) {
+            setVerified(true);
+            setStep(4);
+            fetchCampaigns();
+            return;
+          }
+        }
+      } catch {}
       setVerifyError('Network error. Please try again.');
     } finally {
       setVerifying(false);
