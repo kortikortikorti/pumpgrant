@@ -35,7 +35,7 @@ export default function Home() {
 
   const steps = [
     { icon: <Zap className="h-6 w-6" />, title: 'Create a Token', desc: 'Launch a token on pump.fun for the Redditor you want to support.' },
-    { icon: <Lock className="h-6 w-6" />, title: 'Lock Fees', desc: 'Set the fee destination to PumpGrant — permanently locked on-chain.' },
+    { icon: <Lock className="h-6 w-6" />, title: 'Share Fees', desc: 'Set the fee destination to PumpGrant on pump.fun — fees get tracked automatically.' },
     { icon: <TrendingUp className="h-6 w-6" />, title: 'Trade', desc: 'Every trade generates fees that accumulate for the beneficiary.' },
     { icon: <Gift className="h-6 w-6" />, title: 'Claim', desc: 'The Redditor verifies their Reddit account, connects their wallet, and claims their accumulated SOL.' },
   ];
@@ -60,7 +60,7 @@ export default function Home() {
             </span>
           </h1>
           <p className="text-lg text-gray-400 max-w-2xl mx-auto mb-8">
-            Launch a token. Lock the fees. Let them claim. Every trade generates SOL that goes directly to the Redditor you choose.
+            Launch a token. Share the fees. Let them claim. Every trade generates SOL that goes directly to the Redditor you choose.
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 mb-16">

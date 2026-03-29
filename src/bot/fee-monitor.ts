@@ -110,8 +110,8 @@ export class FeeMonitor {
    */
   private getCampaigns(): Map<string, any> {
     const campaigns = this.db.prepare(
-      'SELECT * FROM campaigns WHERE status = ?'
-    ).all('active');
+      "SELECT * FROM campaigns WHERE status IN ('active', 'verified', 'pending')"
+    ).all();
 
     const map = new Map<string, any>();
     for (const c of campaigns as any[]) {
@@ -149,6 +149,13 @@ export class FeeMonitor {
     this.db.prepare(
       'UPDATE campaigns SET total_fees_accumulated = total_fees_accumulated + ? WHERE id = ?'
     ).run(amountSol, campaignId);
+
+    // Auto-verify pending campaigns on first fee receipt
+    const campaign = this.db.prepare('SELECT status FROM campaigns WHERE id = ?').get(campaignId) as { status: string } | undefined;
+    if (campaign && campaign.status === 'pending') {
+      this.db.prepare("UPDATE campaigns SET status = 'verified' WHERE id = ?").run(campaignId);
+      console.log(`  ✅ Campaign ${campaignId} verified — first fee received!`);
+    }
 
     console.log(`  📝 Recorded fee event: ${amountSol.toFixed(6)} SOL for campaign ${campaignId}`);
   }
@@ -278,8 +285,8 @@ export class FeeMonitor {
       const senderAddress = accountKeys[senderIndex].pubkey.toBase58();
       // Check if sender matches any campaign's creator wallet
       const allCampaigns = this.db.prepare(
-        'SELECT * FROM campaigns WHERE creator_wallet = ? AND status = ?'
-      ).all(senderAddress, 'active') as any[];
+        "SELECT * FROM campaigns WHERE creator_wallet = ? AND status IN ('active', 'verified', 'pending')"
+      ).all(senderAddress) as any[];
 
       if (allCampaigns.length === 1) {
         return { campaignId: allCampaigns[0].id, amountSol: balanceDiff };

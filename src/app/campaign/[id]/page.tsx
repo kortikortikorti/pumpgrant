@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { Lock, Copy, Check, ExternalLink, TrendingUp, Coins, ArrowDown, BarChart3, Loader2 } from 'lucide-react';
+import { Clock, Copy, Check, ExternalLink, TrendingUp, Coins, ArrowDown, BarChart3, Loader2, CheckCircle } from 'lucide-react';
 import RedditBadge from '@/components/RedditBadge';
 import StatsCard from '@/components/StatsCard';
 import FeeTimeline from '@/components/FeeTimeline';
@@ -114,18 +114,29 @@ export default function CampaignPage() {
         </div>
       </div>
 
-      {/* Fee Lock Status */}
-      <div className="flex items-center gap-3 rounded-xl bg-green-500/5 border border-green-500/20 p-4 mb-8">
-        <Lock className="h-5 w-5 text-green-400" />
-        <div>
-          <p className="text-sm font-semibold text-green-400">
-            LOCKED ✅ — Fees permanently directed to u/{campaign.beneficiary_reddit}
-          </p>
-          <p className="text-xs text-gray-500 mt-0.5">
-            Fee authority has been revoked on-chain. This is irreversible.
-          </p>
+      {/* Verification Status */}
+      {campaign.status === 'pending' ? (
+        <div className="flex items-center gap-3 rounded-xl bg-amber-500/5 border border-amber-500/20 p-4 mb-8">
+          <Clock className="h-5 w-5 text-amber-400" />
+          <div>
+            <p className="text-sm font-semibold text-amber-400">
+              ⏳ Pending Verification
+            </p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              This campaign will be verified once the first trading fee arrives at PumpGrant&apos;s wallet. Make sure you&apos;ve set the fee sharing on pump.fun correctly.
+            </p>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="flex items-center gap-3 rounded-xl bg-green-500/5 border border-green-500/20 p-4 mb-8">
+          <CheckCircle className="h-5 w-5 text-green-400" />
+          <div>
+            <p className="text-sm font-semibold text-green-400">
+              ✅ Verified — Trading fees are being received on-chain.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Stats Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">

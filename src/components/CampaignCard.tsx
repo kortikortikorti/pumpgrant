@@ -63,11 +63,18 @@ export default function CampaignCard({ campaign }: { campaign: Campaign }) {
         </div>
 
         <div className="mt-3 flex items-center justify-between">
-          {campaign.status === 'active' && (
+          {campaign.status === 'pending' ? (
+            <div className="flex items-center gap-1.5">
+              <div className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+              <span className="text-xs text-amber-500">Pending</span>
+            </div>
+          ) : (campaign.status === 'verified' || campaign.status === 'active') ? (
             <div className="flex items-center gap-1.5">
               <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
-              <span className="text-xs text-green-500">Active</span>
+              <span className="text-xs text-green-500">Verified</span>
             </div>
+          ) : (
+            <div />
           )}
           <button
             onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.open(`https://pump.fun/coin/${campaign.token_address}`, '_blank'); }}

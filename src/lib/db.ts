@@ -102,7 +102,7 @@ function seedMockData(db: Database.Database) {
       fee_vault_address: 'FEEVau1tXXXpumpgrant111111111111111111111111',
       total_fees_accumulated: 12.847,
       total_fees_claimed: 5.2,
-      status: 'active',
+      status: 'verified',
     },
     {
       id: 'e5f6g7h8',
@@ -116,7 +116,7 @@ function seedMockData(db: Database.Database) {
       fee_vault_address: 'FEEVau1tXXXpumpgrant222222222222222222222222',
       total_fees_accumulated: 34.521,
       total_fees_claimed: 12.0,
-      status: 'active',
+      status: 'verified',
     },
     {
       id: 'i9j0k1l2',
@@ -130,7 +130,7 @@ function seedMockData(db: Database.Database) {
       fee_vault_address: 'FEEVau1tXXXpumpgrant333333333333333333333333',
       total_fees_accumulated: 8.134,
       total_fees_claimed: 0,
-      status: 'active',
+      status: 'pending',
     },
     {
       id: 'm3n4o5p6',
@@ -144,7 +144,7 @@ function seedMockData(db: Database.Database) {
       fee_vault_address: 'FEEVau1tXXXpumpgrant444444444444444444444444',
       total_fees_accumulated: 51.992,
       total_fees_claimed: 20.5,
-      status: 'active',
+      status: 'verified',
     },
     {
       id: 'q7r8s9t0',
@@ -158,7 +158,7 @@ function seedMockData(db: Database.Database) {
       fee_vault_address: 'FEEVau1tXXXpumpgrant555555555555555555555555',
       total_fees_accumulated: 6.77,
       total_fees_claimed: 2.1,
-      status: 'active',
+      status: 'verified',
     },
     {
       id: 'u1v2w3x4',
@@ -172,7 +172,7 @@ function seedMockData(db: Database.Database) {
       fee_vault_address: 'FEEVau1tXXXpumpgrant666666666666666666666666',
       total_fees_accumulated: 19.305,
       total_fees_claimed: 7.8,
-      status: 'active',
+      status: 'verified',
     },
   ];
 

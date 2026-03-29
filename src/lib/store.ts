@@ -72,7 +72,7 @@ export async function createCampaign(
     id,
     total_fees_accumulated: 0,
     total_fees_claimed: 0,
-    status: 'active',
+    status: 'pending',
     created_at: new Date().toISOString(),
   };
   const pipeline = redis.pipeline();

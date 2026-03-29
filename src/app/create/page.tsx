@@ -243,13 +243,13 @@ export default function CreatePage() {
                     </div>
                   </div>
 
-                  <SubStep num={4} text="Click Save — this is permanent and cannot be changed" icon="🔒" />
+                  <SubStep num={4} text="Click Save to start directing fees to PumpGrant" icon="💾" />
                 </div>
 
                 <div className="rounded-xl bg-yellow-500/5 border border-yellow-500/20 px-4 py-3 flex items-start gap-2">
-                  <span className="text-base shrink-0">⚠️</span>
+                  <span className="text-base shrink-0">ℹ️</span>
                   <p className="text-xs text-yellow-400/80">
-                    Once saved, fees are permanently locked to this address. This protects the beneficiary.
+                    Your campaign will show as &quot;Pending&quot; until the first trading fee is received, then it will be automatically verified.
                   </p>
                 </div>
               </div>
@@ -354,9 +354,10 @@ function SuccessView({ data, onReset }: { data: any; onReset: () => void }) {
         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-500/10 mx-auto mb-4">
           <Check className="h-8 w-8 text-green-400" />
         </div>
-        <h1 className="text-2xl font-bold text-white mb-2">Grant Created!</h1>
+        <h1 className="text-2xl font-bold text-white mb-2">Campaign Created!</h1>
+        <p className="text-sm text-amber-400 font-medium mb-2">Status: ⏳ Pending</p>
         <p className="text-sm text-gray-400 mb-6">
-          Your token has been linked with fees directed to u/{data.beneficiary_reddit}
+          Your campaign will be automatically verified once the first trading fee arrives. Make sure you&apos;ve set the fee sharing to PumpGrant&apos;s wallet on pump.fun.
         </p>
 
         <div className="space-y-3 text-left mb-6">
