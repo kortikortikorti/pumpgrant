@@ -1,46 +1,68 @@
 import { NextRequest, NextResponse } from 'next/server';
-import crypto from 'crypto';
+import { buildCreateTokenTransaction } from '@/lib/pumpfun-create';
 
 /**
  * POST /api/create-token
  *
- * Returns an unsigned transaction that:
- * 1. Creates a token via pump.fun's on-chain program
- * 2. Sets fee destination to PumpGrant's wallet
- * 3. Revokes fee authority (permanent)
+ * Builds an unsigned transaction that creates a token via pump.fun's on-chain program.
+ * The client must sign with their wallet and send to the network.
  *
- * The user signs this single transaction in their wallet (Phantom/Solflare).
+ * Request body:
+ * - creator_wallet: string (user's wallet address)
+ * - token_name: string
+ * - token_ticker: string
+ * - token_uri: string (IPFS/Arweave metadata URI)
+ * - initial_buy_sol?: number (optional initial buy amount in SOL)
  *
- * TODO: In production, use buildCreateTokenTransaction() from lib/pumpfun.ts
- * to construct the actual Solana transaction.
+ * Response:
+ * - serialized_transaction: string (base64 VersionedTransaction, partially signed by mint keypair)
+ * - token_address: string (the mint public key / token CA)
+ * - mint_secret_key: string (base64, needed to complete signing)
+ * - instruction_count: number
  */
 export async function POST(request: NextRequest) {
-  const body = await request.json();
-  const { creator_wallet, token_name, token_ticker, token_description, token_image_url } = body;
+  try {
+    const body = await request.json();
+    const { creator_wallet, token_name, token_ticker, token_uri, initial_buy_sol } = body;
 
-  if (!creator_wallet || !token_name || !token_ticker) {
-    return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
+    if (!creator_wallet || !token_name || !token_ticker) {
+      return NextResponse.json({ error: 'Missing required fields: creator_wallet, token_name, token_ticker' }, { status: 400 });
+    }
+
+    if (!token_uri) {
+      return NextResponse.json({ error: 'Missing token_uri — upload metadata first via /api/upload-metadata' }, { status: 400 });
+    }
+
+    // Validate initial buy amount if provided
+    if (initial_buy_sol !== undefined && initial_buy_sol !== null) {
+      const buyAmount = Number(initial_buy_sol);
+      if (isNaN(buyAmount) || buyAmount < 0) {
+        return NextResponse.json({ error: 'Invalid initial_buy_sol — must be a positive number' }, { status: 400 });
+      }
+      if (buyAmount > 100) {
+        return NextResponse.json({ error: 'Initial buy amount too large (max 100 SOL)' }, { status: 400 });
+      }
+    }
+
+    const result = await buildCreateTokenTransaction({
+      userPublicKey: creator_wallet,
+      tokenName: token_name,
+      tokenSymbol: token_ticker,
+      tokenUri: token_uri,
+      initialBuyAmountSol: initial_buy_sol ? Number(initial_buy_sol) : undefined,
+    });
+
+    return NextResponse.json({
+      serialized_transaction: result.serializedTransaction,
+      token_address: result.mintPublicKey,
+      mint_secret_key: result.mintSecretKey,
+      instruction_count: result.instructionCount,
+    });
+  } catch (err: any) {
+    console.error('[create-token] Error:', err);
+    return NextResponse.json(
+      { error: `Failed to build transaction: ${err.message || err}` },
+      { status: 500 },
+    );
   }
-
-  // TODO: In production:
-  // import { buildCreateTokenTransaction } from '@/lib/pumpfun';
-  // const result = await buildCreateTokenTransaction({
-  //   creatorPublicKey: creator_wallet,
-  //   tokenName: token_name,
-  //   tokenSymbol: token_ticker,
-  //   tokenDescription: token_description || '',
-  //   tokenImageUrl: token_image_url || '',
-  // });
-  // return NextResponse.json(result);
-
-  // For MVP: return mock data
-  const tokenAddress = crypto.randomBytes(32).toString('base64url').slice(0, 44);
-  const feeVaultAddress = 'FEEVau1t' + crypto.randomBytes(24).toString('base64url').slice(0, 36);
-
-  return NextResponse.json({
-    transaction: null, // Would be base64-encoded unsigned transaction
-    token_address: tokenAddress,
-    fee_vault_address: feeVaultAddress,
-    message: 'Mock transaction — in production, this would return a real unsigned Solana transaction for wallet signing.',
-  });
 }

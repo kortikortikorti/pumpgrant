@@ -1,10 +1,12 @@
 'use client';
 
-import { useState } from 'react';
-import { AlertCircle, Check, Copy, ExternalLink, ArrowRight, Shield, Plus, Link2, ChevronDown, Lock, Unlock, Users } from 'lucide-react';
+import { useState, useRef, useCallback } from 'react';
+import { AlertCircle, Check, Copy, ExternalLink, ArrowRight, Shield, Plus, Link2, Upload, Image as ImageIcon, Users, Lock, Unlock, X } from 'lucide-react';
 import Link from 'next/link';
 import { useWallet } from '@solana/wallet-adapter-react';
+import { useConnection } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
+import { VersionedTransaction } from '@solana/web3.js';
 
 const PLATFORM_WALLET = process.env.NEXT_PUBLIC_PLATFORM_WALLET || 'C8PQ5MhTQgo1wehNgq22wNMJcuuyH9f2HyHYi5XP36J';
 
@@ -78,11 +80,11 @@ function ChooseFlow({ onSelect }: { onSelect: (mode: FlowMode) => void }) {
                 Create a new token
               </h2>
               <p className="text-sm text-gray-500 mt-1">
-                Launch a new pump.fun token and automatically set fee sharing to PumpGrant. One transaction — done.
+                Launch a new pump.fun token directly from PumpGrant. Signs with your wallet — real on-chain token creation.
               </p>
               <div className="flex items-center gap-2 mt-3">
-                <span className="text-xs bg-orange-500/10 text-orange-400 px-2 py-0.5 rounded-full">Token2022</span>
-                <span className="text-xs bg-purple-500/10 text-purple-400 px-2 py-0.5 rounded-full">Auto fee sharing</span>
+                <span className="text-xs bg-orange-500/10 text-orange-400 px-2 py-0.5 rounded-full">SPL Token-2022</span>
+                <span className="text-xs bg-purple-500/10 text-purple-400 px-2 py-0.5 rounded-full">On-chain creation</span>
               </div>
             </div>
             <ArrowRight className="h-5 w-5 text-gray-600 group-hover:text-orange-400 transition-colors mt-1" />
@@ -166,7 +168,6 @@ function ExistingTokenFlow({ onCreated, onBack }: { onCreated: (data: any) => vo
       return;
     }
 
-    // Use cached verify result or verify again
     if (!verifyResult) {
       await handleVerify();
       return;
@@ -216,7 +217,7 @@ function ExistingTokenFlow({ onCreated, onBack }: { onCreated: (data: any) => vo
 
         <div className="space-y-8">
 
-          {/* Step 1: Who are you funding? */}
+          {/* Step 1 */}
           <div className="relative">
             <StepNumber num={1} done={stepDone(1)} />
             <div className="ml-16">
@@ -266,7 +267,7 @@ function ExistingTokenFlow({ onCreated, onBack }: { onCreated: (data: any) => vo
             </div>
           </div>
 
-          {/* Step 2: Create token on pump.fun */}
+          {/* Step 2 */}
           <div className="relative">
             <StepNumber num={2} done={stepDone(2)} />
             <div className="ml-16">
@@ -290,7 +291,7 @@ function ExistingTokenFlow({ onCreated, onBack }: { onCreated: (data: any) => vo
             </div>
           </div>
 
-          {/* Step 3: Set up fee sharing */}
+          {/* Step 3 */}
           <div className="relative">
             <StepNumber num={3} done={stepDone(3)} />
             <div className="ml-16">
@@ -337,7 +338,7 @@ function ExistingTokenFlow({ onCreated, onBack }: { onCreated: (data: any) => vo
             </div>
           </div>
 
-          {/* Step 4: Verify & Link */}
+          {/* Step 4 */}
           <div className="relative">
             <StepNumber num={4} done={stepDone(4)} />
             <div className="ml-16">
@@ -370,10 +371,7 @@ function ExistingTokenFlow({ onCreated, onBack }: { onCreated: (data: any) => vo
                     </div>
                   </div>
 
-                  {/* Verification Result Display */}
-                  {verifyResult && (
-                    <VerificationDisplay result={verifyResult} />
-                  )}
+                  {verifyResult && <VerificationDisplay result={verifyResult} />}
 
                   {error && (
                     <div className="rounded-xl bg-red-500/10 border border-red-500/20 px-4 py-3 text-sm text-red-400 flex items-start gap-2">
@@ -418,6 +416,8 @@ function ExistingTokenFlow({ onCreated, onBack }: { onCreated: (data: any) => vo
 /* ─── Create Token Flow ─── */
 function CreateTokenFlow({ onCreated, onBack }: { onCreated: (data: any) => void; onBack: () => void }) {
   const wallet = useWallet();
+  const { connection } = useConnection();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState({
     beneficiary_reddit: '',
     campaign_title: '',
@@ -425,14 +425,46 @@ function CreateTokenFlow({ onCreated, onBack }: { onCreated: (data: any) => void
     token_name: '',
     token_symbol: '',
     token_description: '',
-    token_image_url: '',
+    initial_buy_sol: '',
   });
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imageUrl, setImageUrl] = useState('');
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [imageMode, setImageMode] = useState<'file' | 'url'>('file');
   const [submitting, setSubmitting] = useState(false);
+  const [statusMsg, setStatusMsg] = useState('');
   const [error, setError] = useState('');
-  const [step, setStep] = useState<'details' | 'wallet' | 'launch'>('details');
+  const [dragOver, setDragOver] = useState(false);
+
+  const handleFileDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOver(false);
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith('image/')) {
+      setImageFile(file);
+      setImagePreview(URL.createObjectURL(file));
+      setImageMode('file');
+    }
+  }, []);
+
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setImageFile(file);
+      setImagePreview(URL.createObjectURL(file));
+      setImageMode('file');
+    }
+  }, []);
+
+  const clearImage = () => {
+    setImageFile(null);
+    setImagePreview(null);
+    setImageUrl('');
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
 
   const handleLaunch = async () => {
-    if (!wallet.publicKey) {
+    if (!wallet.publicKey || !wallet.signTransaction) {
       setError('Please connect your wallet first');
       return;
     }
@@ -450,36 +482,98 @@ function CreateTokenFlow({ onCreated, onBack }: { onCreated: (data: any) => void
 
     setSubmitting(true);
     setError('');
+    setStatusMsg('Uploading metadata...');
 
     try {
-      // Build the create_v2 transaction via our API
-      const res = await fetch('/api/create-token', {
+      // Step 1: Upload metadata to get URI
+      let metadataUri: string;
+      
+      const metadataFormData = new FormData();
+      metadataFormData.append('name', form.token_name);
+      metadataFormData.append('symbol', form.token_symbol);
+      metadataFormData.append('description', form.token_description || form.campaign_description || '');
+      
+      if (imageMode === 'file' && imageFile) {
+        metadataFormData.append('file', imageFile);
+      } else if (imageMode === 'url' && imageUrl) {
+        metadataFormData.append('image_url', imageUrl);
+      }
+
+      const metaRes = await fetch('/api/upload-metadata', {
+        method: 'POST',
+        body: metadataFormData,
+      });
+
+      if (!metaRes.ok) {
+        const metaErr = await metaRes.json();
+        throw new Error(metaErr.error || 'Failed to upload metadata');
+      }
+
+      const { metadataUri: uri } = await metaRes.json();
+      metadataUri = uri;
+      console.log('[create] Metadata URI:', metadataUri);
+
+      // Step 2: Build the create_v2 transaction
+      setStatusMsg('Building transaction...');
+      
+      const buyAmount = form.initial_buy_sol ? parseFloat(form.initial_buy_sol) : undefined;
+      
+      const txRes = await fetch('/api/create-token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           creator_wallet: wallet.publicKey.toBase58(),
           token_name: form.token_name,
           token_ticker: form.token_symbol,
-          token_description: form.token_description,
-          token_image_url: form.token_image_url,
+          token_uri: metadataUri,
+          initial_buy_sol: buyAmount && buyAmount > 0 ? buyAmount : undefined,
         }),
       });
 
-      const data = await res.json();
-
-      if (!res.ok) {
-        setError(data.error || 'Failed to build transaction');
-        setSubmitting(false);
-        return;
+      if (!txRes.ok) {
+        const txErr = await txRes.json();
+        throw new Error(txErr.error || 'Failed to build transaction');
       }
 
-      // For now, create the campaign with the returned token address
-      // In production: sign transaction, wait for confirmation, then create campaign
+      const { serialized_transaction, token_address } = await txRes.json();
+
+      // Step 3: Deserialize and sign the transaction
+      setStatusMsg('Please sign the transaction in your wallet...');
+      
+      const txBuffer = Buffer.from(serialized_transaction, 'base64');
+      const transaction = VersionedTransaction.deserialize(txBuffer);
+
+      // The transaction is already partially signed by the mint keypair (server-side)
+      // Now the user needs to sign it with their wallet
+      const signedTx = await wallet.signTransaction(transaction);
+
+      // Step 4: Send the transaction
+      setStatusMsg('Sending transaction to Solana...');
+      
+      const txSignature = await connection.sendRawTransaction(signedTx.serialize(), {
+        skipPreflight: false,
+        maxRetries: 3,
+      });
+
+      console.log('[create] Transaction sent:', txSignature);
+      setStatusMsg('Confirming transaction...');
+
+      // Wait for confirmation
+      const confirmation = await connection.confirmTransaction(txSignature, 'confirmed');
+      
+      if (confirmation.value.err) {
+        throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);
+      }
+
+      console.log('[create] Transaction confirmed!');
+      setStatusMsg('Token created! Creating campaign...');
+
+      // Step 5: Create campaign in DB
       const campaignRes = await fetch('/api/campaigns', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          token_address: data.token_address,
+          token_address: token_address,
           token_name: form.token_name,
           token_ticker: form.token_symbol,
           token_description: form.campaign_description || form.token_description,
@@ -491,14 +585,30 @@ function CreateTokenFlow({ onCreated, onBack }: { onCreated: (data: any) => void
 
       const campaignData = await campaignRes.json();
       if (campaignRes.ok) {
-        onCreated(campaignData);
+        onCreated({ 
+          ...campaignData, 
+          tx_signature: txSignature,
+          token_address: token_address,
+        });
       } else {
-        setError(campaignData.error || 'Failed to create campaign');
+        // Token was created but campaign creation failed — still show success
+        onCreated({
+          id: 'pending',
+          token_address: token_address,
+          tx_signature: txSignature,
+          error_note: campaignData.error || 'Campaign creation failed, but token was created successfully.',
+        });
       }
     } catch (err: any) {
-      setError(err.message || 'Network error');
+      console.error('[create] Error:', err);
+      if (err.message?.includes('User rejected')) {
+        setError('Transaction was rejected by your wallet.');
+      } else {
+        setError(err.message || 'Failed to create token');
+      }
     }
     setSubmitting(false);
+    setStatusMsg('');
   };
 
   return (
@@ -508,7 +618,7 @@ function CreateTokenFlow({ onCreated, onBack }: { onCreated: (data: any) => void
       </button>
       <h1 className="text-3xl font-bold mb-2">Create New Token</h1>
       <p className="text-gray-400 mb-10">
-        Launch a pump.fun token with automatic fee sharing to PumpGrant.
+        Launch a real pump.fun token on Solana. You&apos;ll sign the transaction with your wallet.
       </p>
 
       <div className="space-y-6">
@@ -519,7 +629,7 @@ function CreateTokenFlow({ onCreated, onBack }: { onCreated: (data: any) => void
           <p className="text-sm text-gray-500 mb-5">Configure your new pump.fun token.</p>
 
           <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-300 mb-2">Token Name *</label>
                 <input
@@ -554,15 +664,124 @@ function CreateTokenFlow({ onCreated, onBack }: { onCreated: (data: any) => void
               />
             </div>
 
+            {/* Image Upload / URL */}
             <div>
-              <label className="block text-sm font-medium text-gray-300 mb-2">Image URL <span className="text-gray-600">(optional)</span></label>
-              <input
-                type="url"
-                placeholder="https://..."
-                value={form.token_image_url}
-                onChange={e => setForm(f => ({ ...f, token_image_url: e.target.value }))}
-                className="w-full rounded-xl border border-[#222] bg-[#0e0e0e] px-4 py-3 text-sm text-white placeholder-gray-600 outline-none focus:border-orange-500/50 transition-colors font-mono text-xs"
-              />
+              <label className="block text-sm font-medium text-gray-300 mb-2">Token Image <span className="text-gray-600">(optional)</span></label>
+              
+              {/* Mode toggle */}
+              <div className="flex gap-2 mb-3">
+                <button
+                  type="button"
+                  onClick={() => setImageMode('file')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                    imageMode === 'file'
+                      ? 'bg-orange-500/20 text-orange-400 border border-orange-500/40'
+                      : 'bg-[#1a1a1a] text-gray-500 border border-[#222] hover:text-gray-300'
+                  }`}
+                >
+                  <Upload className="h-3 w-3" /> Upload File
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setImageMode('url')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                    imageMode === 'url'
+                      ? 'bg-orange-500/20 text-orange-400 border border-orange-500/40'
+                      : 'bg-[#1a1a1a] text-gray-500 border border-[#222] hover:text-gray-300'
+                  }`}
+                >
+                  <Link2 className="h-3 w-3" /> Paste URL
+                </button>
+              </div>
+
+              {imageMode === 'file' ? (
+                <div>
+                  {imagePreview && imageFile ? (
+                    <div className="relative inline-block">
+                      <img
+                        src={imagePreview}
+                        alt="Token preview"
+                        className="h-24 w-24 rounded-xl object-cover border border-[#333]"
+                      />
+                      <button
+                        type="button"
+                        onClick={clearImage}
+                        className="absolute -top-2 -right-2 flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white hover:bg-red-400 transition-colors"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div
+                      onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                      onDragLeave={() => setDragOver(false)}
+                      onDrop={handleFileDrop}
+                      onClick={() => fileInputRef.current?.click()}
+                      className={`flex flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-8 cursor-pointer transition-colors ${
+                        dragOver
+                          ? 'border-orange-500/60 bg-orange-500/5'
+                          : 'border-[#333] bg-[#0e0e0e] hover:border-[#444] hover:bg-[#111]'
+                      }`}
+                    >
+                      <ImageIcon className="h-8 w-8 text-gray-600 mb-2" />
+                      <p className="text-sm text-gray-500">Drop image here or click to select</p>
+                      <p className="text-xs text-gray-600 mt-1">PNG, JPG, GIF, WebP</p>
+                    </div>
+                  )}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileSelect}
+                    className="hidden"
+                  />
+                </div>
+              ) : (
+                <div>
+                  <input
+                    type="url"
+                    placeholder="https://example.com/image.png"
+                    value={imageUrl}
+                    onChange={e => {
+                      setImageUrl(e.target.value);
+                      if (e.target.value) setImagePreview(e.target.value);
+                    }}
+                    className="w-full rounded-xl border border-[#222] bg-[#0e0e0e] px-4 py-3 text-sm text-white placeholder-gray-600 outline-none focus:border-orange-500/50 transition-colors font-mono text-xs"
+                  />
+                  {imageUrl && (
+                    <div className="mt-3 relative inline-block">
+                      <img
+                        src={imageUrl}
+                        alt="Token preview"
+                        className="h-24 w-24 rounded-xl object-cover border border-[#333]"
+                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Initial Buy */}
+            <div>
+              <label className="block text-sm font-medium text-gray-300 mb-2">
+                Initial Buy Amount <span className="text-gray-600">(optional)</span>
+              </label>
+              <div className="flex items-center rounded-xl border border-[#222] bg-[#0e0e0e] overflow-hidden focus-within:border-orange-500/50 transition-colors">
+                <input
+                  type="number"
+                  step="0.001"
+                  min="0"
+                  placeholder="0.00"
+                  value={form.initial_buy_sol}
+                  onChange={e => setForm(f => ({ ...f, initial_buy_sol: e.target.value }))}
+                  className="flex-1 bg-transparent px-4 py-3 text-sm text-white placeholder-gray-600 outline-none"
+                />
+                <span className="px-4 text-sm text-gray-500 bg-[#0a0a0a] py-3 border-l border-[#222] font-medium">SOL</span>
+              </div>
+              <p className="text-xs text-gray-600 mt-1.5">
+                Buy tokens right after creation. This costs additional SOL + gas. Leave empty for no initial buy.
+              </p>
             </div>
           </div>
         </div>
@@ -599,21 +818,21 @@ function CreateTokenFlow({ onCreated, onBack }: { onCreated: (data: any) => void
           </div>
         </div>
 
-        {/* Fee Sharing Info */}
-        <div className="rounded-xl bg-green-500/5 border border-green-500/20 p-5">
+        {/* Fee Sharing Note */}
+        <div className="rounded-xl bg-amber-500/5 border border-amber-500/20 p-5">
           <div className="flex items-start gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-green-500/10 text-green-400 shrink-0">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/10 text-amber-400 shrink-0">
               <Shield className="h-4 w-4" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-green-400">Automatic Fee Sharing</p>
+              <p className="text-sm font-semibold text-amber-400">Fee Sharing — Set Up After Creation</p>
               <p className="text-xs text-gray-400 mt-1">
-                After token creation, fee sharing will be automatically configured to send 100% of creator rewards to PumpGrant&apos;s wallet.
-                This is <strong className="text-white">locked permanently</strong> and cannot be changed.
+                After your token is created, you&apos;ll need to set up fee sharing on pump.fun.
+                Go to your token&apos;s page → &ldquo;Share creator rewards&rdquo; → paste PumpGrant&apos;s wallet → 100% → Save.
               </p>
-              <div className="mt-2 rounded-lg bg-[#0a0a0a] border border-green-500/20 px-3 py-2">
-                <p className="text-xs text-gray-500">Fee destination:</p>
-                <code className="text-xs text-green-400 font-mono break-all">{PLATFORM_WALLET}</code>
+              <div className="mt-2 rounded-lg bg-[#0a0a0a] border border-amber-500/20 px-3 py-2">
+                <p className="text-xs text-gray-500">PumpGrant wallet to paste:</p>
+                <code className="text-xs text-amber-400 font-mono break-all">{PLATFORM_WALLET}</code>
               </div>
             </div>
           </div>
@@ -632,6 +851,13 @@ function CreateTokenFlow({ onCreated, onBack }: { onCreated: (data: any) => void
             )}
           </div>
 
+          {statusMsg && (
+            <div className="rounded-xl bg-blue-500/10 border border-blue-500/20 px-4 py-3 text-sm text-blue-400 flex items-center gap-2 mb-4">
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-400 border-t-transparent shrink-0" />
+              <span>{statusMsg}</span>
+            </div>
+          )}
+
           {error && (
             <div className="rounded-xl bg-red-500/10 border border-red-500/20 px-4 py-3 text-sm text-red-400 flex items-start gap-2 mb-4">
               <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
@@ -647,17 +873,22 @@ function CreateTokenFlow({ onCreated, onBack }: { onCreated: (data: any) => void
             {submitting ? (
               <>
                 <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
-                Launching token...
+                {statusMsg || 'Processing...'}
               </>
             ) : (
               <>
-                🚀 Launch Token &amp; Create Campaign
+                🚀 Create Token on pump.fun
               </>
             )}
           </button>
 
           <p className="text-xs text-gray-600 text-center mt-3">
-            You&apos;ll be asked to sign one transaction in your wallet.
+            You&apos;ll sign a real Solana transaction. This creates the token on-chain via pump.fun&apos;s program.
+            {form.initial_buy_sol && parseFloat(form.initial_buy_sol) > 0 && (
+              <span className="block mt-1 text-amber-500">
+                + Initial buy of {form.initial_buy_sol} SOL will be included.
+              </span>
+            )}
           </p>
         </div>
       </div>
@@ -676,7 +907,6 @@ function VerificationDisplay({ result }: { result: any }) {
 
   return (
     <div className="space-y-3">
-      {/* Overall Status */}
       <div className={`rounded-xl px-4 py-3 flex items-start gap-3 ${
         isValid
           ? 'bg-green-500/10 border border-green-500/20'
@@ -705,7 +935,6 @@ function VerificationDisplay({ result }: { result: any }) {
         </div>
       </div>
 
-      {/* Lock Status */}
       {hasConfig && (
         <div className={`rounded-xl px-4 py-3 flex items-center gap-2 ${
           isLocked
@@ -725,7 +954,6 @@ function VerificationDisplay({ result }: { result: any }) {
         </div>
       )}
 
-      {/* Shareholders List */}
       {shareholders.length > 0 && (
         <div className="rounded-xl border border-[#222] bg-[#0a0a0a] p-4">
           <div className="flex items-center gap-2 mb-3">
@@ -785,9 +1013,25 @@ function SubStep({ num, text }: { num: number; text: string }) {
 
 /* ─── Success View ─── */
 function SuccessView({ data, onReset }: { data: any; onReset: () => void }) {
+  const [copied, setCopied] = useState(false);
+  const [walletCopied, setWalletCopied] = useState(false);
   const verifyResult = data.verify_result;
   const isVerified = verifyResult?.valid;
   const isLocked = verifyResult?.is_locked;
+  const txSignature = data.tx_signature;
+  const tokenAddress = data.token_address;
+
+  const copyAddress = () => {
+    navigator.clipboard.writeText(tokenAddress);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const copyPlatformWallet = () => {
+    navigator.clipboard.writeText(PLATFORM_WALLET);
+    setWalletCopied(true);
+    setTimeout(() => setWalletCopied(false), 2000);
+  };
 
   return (
     <div className="mx-auto max-w-xl px-4 py-24">
@@ -795,34 +1039,75 @@ function SuccessView({ data, onReset }: { data: any; onReset: () => void }) {
         <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-500/10 mx-auto mb-4">
           <Check className="h-8 w-8 text-green-400" />
         </div>
-        <h1 className="text-2xl font-bold text-white mb-2">Campaign Created!</h1>
+        <h1 className="text-2xl font-bold text-white mb-2">
+          {txSignature ? 'Token Created on pump.fun! 🎉' : 'Campaign Created!'}
+        </h1>
         <p className={`text-sm font-medium mb-2 ${
-          isVerified ? 'text-green-400' : 'text-amber-400'
+          isVerified ? 'text-green-400' : txSignature ? 'text-green-400' : 'text-amber-400'
         }`}>
-          Status: {isVerified ? '✅ Verified on-chain' : '⏳ Pending verification'}
+          {txSignature 
+            ? '✅ Token is live on Solana'
+            : isVerified ? '✅ Verified on-chain' : '⏳ Pending verification'}
           {isLocked && ' 🔒'}
         </p>
-        <p className="text-sm text-gray-400 mb-6">
-          {isVerified
-            ? 'Fee sharing has been verified on-chain. Trading fees will be directed to PumpGrant.'
-            : 'Your campaign will be verified once fee sharing is confirmed on-chain.'}
-        </p>
 
-        <div className="space-y-3 text-left mb-6">
+        <div className="space-y-3 text-left mb-6 mt-6">
           <div className="rounded-xl bg-[#0a0a0a] border border-[#222] p-4">
-            <p className="text-xs text-gray-500 mb-1">Token Address</p>
-            <div className="flex items-center justify-between">
-              <code className="text-sm text-purple-400 font-mono break-all">{data.token_address}</code>
+            <p className="text-xs text-gray-500 mb-1">Token Address (CA)</p>
+            <div className="flex items-center justify-between gap-2">
+              <code className="text-sm text-purple-400 font-mono break-all">{tokenAddress}</code>
               <button
-                onClick={() => navigator.clipboard.writeText(data.token_address)}
+                onClick={copyAddress}
                 className="text-gray-500 hover:text-white ml-2 shrink-0"
               >
-                <Copy className="h-3.5 w-3.5" />
+                {copied ? <Check className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5" />}
               </button>
             </div>
           </div>
 
-          {/* Show shareholders if available */}
+          {txSignature && (
+            <div className="rounded-xl bg-[#0a0a0a] border border-[#222] p-4">
+              <p className="text-xs text-gray-500 mb-1">Transaction</p>
+              <a
+                href={`https://solscan.io/tx/${txSignature}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm text-blue-400 hover:text-blue-300 font-mono break-all flex items-center gap-1"
+              >
+                {txSignature.slice(0, 20)}...{txSignature.slice(-8)}
+                <ExternalLink className="h-3 w-3 shrink-0" />
+              </a>
+            </div>
+          )}
+
+          {/* Fee sharing setup instructions */}
+          {txSignature && (
+            <div className="rounded-xl bg-amber-500/5 border border-amber-500/20 p-4">
+              <p className="text-sm font-semibold text-amber-400 mb-2">⚡ Next Step: Set Up Fee Sharing</p>
+              <ol className="text-xs text-gray-400 space-y-1.5 list-decimal list-inside">
+                <li>
+                  Go to{' '}
+                  <a
+                    href={`https://pump.fun/coin/${tokenAddress}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-amber-400 hover:underline"
+                  >
+                    your token on pump.fun
+                  </a>
+                </li>
+                <li>Click &ldquo;Share creator rewards&rdquo;</li>
+                <li>
+                  Paste PumpGrant wallet:{' '}
+                  <button onClick={copyPlatformWallet} className="inline text-amber-400 hover:underline font-mono">
+                    {walletCopied ? '✓ Copied!' : `${PLATFORM_WALLET.slice(0, 12)}...`}
+                  </button>
+                </li>
+                <li>Set to <strong className="text-white">100%</strong> → Save</li>
+              </ol>
+            </div>
+          )}
+
           {verifyResult?.shareholders?.length > 0 && (
             <div className="rounded-xl bg-[#0a0a0a] border border-[#222] p-4">
               <p className="text-xs text-gray-500 mb-2">Fee Shareholders (on-chain)</p>
@@ -836,16 +1121,35 @@ function SuccessView({ data, onReset }: { data: any; onReset: () => void }) {
               ))}
             </div>
           )}
+
+          {data.error_note && (
+            <div className="rounded-xl bg-amber-500/5 border border-amber-500/20 px-4 py-3">
+              <p className="text-xs text-amber-400">{data.error_note}</p>
+            </div>
+          )}
         </div>
 
-        <div className="flex gap-3">
-          <Link
-            href={`/campaign/${data.id}`}
-            className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-[#FF4500] to-[#FF6B35] py-3 text-sm font-medium text-white hover:opacity-90 transition-opacity"
-          >
-            View Campaign
-            <ExternalLink className="h-3.5 w-3.5" />
-          </Link>
+        <div className="flex flex-col sm:flex-row gap-3">
+          {tokenAddress && (
+            <a
+              href={`https://pump.fun/coin/${tokenAddress}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-orange-500 to-red-500 py-3 text-sm font-medium text-white hover:opacity-90 transition-opacity"
+            >
+              View on pump.fun
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+          )}
+          {data.id && data.id !== 'pending' && (
+            <Link
+              href={`/campaign/${data.id}`}
+              className="flex-1 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-purple-600 py-3 text-sm font-medium text-white hover:opacity-90 transition-opacity"
+            >
+              View Campaign
+              <ExternalLink className="h-3.5 w-3.5" />
+            </Link>
+          )}
           <button
             onClick={onReset}
             className="flex-1 rounded-xl border border-[#333] py-3 text-sm font-medium text-gray-400 hover:text-white hover:border-[#444] transition-colors"
