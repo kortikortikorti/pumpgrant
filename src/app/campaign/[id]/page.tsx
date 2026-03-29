@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
-import { Clock, Copy, Check, ExternalLink, TrendingUp, Coins, ArrowDown, BarChart3, Loader2, CheckCircle } from 'lucide-react';
+import { Clock, Copy, Check, ExternalLink, TrendingUp, Coins, ArrowDown, BarChart3, Loader2, CheckCircle, Lock, Unlock, Users, Shield, RefreshCw } from 'lucide-react';
 import RedditBadge from '@/components/RedditBadge';
 import StatsCard from '@/components/StatsCard';
 import FeeTimeline from '@/components/FeeTimeline';
+
+const PLATFORM_WALLET = process.env.NEXT_PUBLIC_PLATFORM_WALLET || 'C8PQ5MhTQgo1wehNgq22wNMJcuuyH9f2HyHYi5XP36J';
 
 export default function CampaignPage() {
   const params = useParams();
@@ -14,6 +16,8 @@ export default function CampaignPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [verifyData, setVerifyData] = useState<any>(null);
+  const [verifying, setVerifying] = useState(false);
 
   useEffect(() => {
     const fetchCampaign = async () => {
@@ -31,6 +35,10 @@ export default function CampaignPage() {
           setError(d.error);
         } else {
           setData(d);
+          // Auto-verify on-chain when campaign loads
+          if (d.token_address) {
+            verifyOnChain(d.token_address);
+          }
         }
       } catch (err) {
         console.error('Failed to fetch campaign:', err);
@@ -41,6 +49,22 @@ export default function CampaignPage() {
     };
     fetchCampaign();
   }, [id]);
+
+  const verifyOnChain = async (tokenAddress: string) => {
+    setVerifying(true);
+    try {
+      const res = await fetch('/api/verify-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token_address: tokenAddress }),
+      });
+      const result = await res.json();
+      setVerifyData(result);
+    } catch (err) {
+      console.error('On-chain verification failed:', err);
+    }
+    setVerifying(false);
+  };
 
   if (loading) {
     return (
@@ -68,6 +92,12 @@ export default function CampaignPage() {
   const claims = data.claims || [];
   const feeEvents = data.feeEvents || [];
   const available = (campaign.total_fees_accumulated || 0) - (campaign.total_fees_claimed || 0);
+
+  // On-chain verification state
+  const onChainVerified = verifyData?.valid === true;
+  const configExists = verifyData?.config_exists === true;
+  const isLocked = verifyData?.is_locked === true;
+  const shareholders = verifyData?.shareholders || [];
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-24">
@@ -114,26 +144,56 @@ export default function CampaignPage() {
         </div>
       </div>
 
-      {/* Verification Status */}
-      {campaign.status === 'pending' ? (
-        <div className="flex items-center gap-3 rounded-xl bg-amber-500/5 border border-amber-500/20 p-4 mb-8">
-          <Clock className="h-5 w-5 text-amber-400" />
-          <div>
-            <p className="text-sm font-semibold text-amber-400">
-              ⏳ Pending Verification
-            </p>
-            <p className="text-xs text-gray-500 mt-0.5">
-              This campaign will be verified once the first trading fee arrives at PumpGrant&apos;s wallet. Make sure you&apos;ve set the fee sharing on pump.fun correctly.
-            </p>
+      {/* On-Chain Verification Status */}
+      <OnChainVerificationBanner
+        verifyData={verifyData}
+        verifying={verifying}
+        campaign={campaign}
+        onRefresh={() => verifyOnChain(campaign.token_address)}
+      />
+
+      {/* Shareholders Display */}
+      {shareholders.length > 0 && (
+        <div className="rounded-xl border border-[#222] bg-[#141414] p-5 mb-8">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Users className="h-4 w-4 text-gray-500" />
+              <p className="text-sm font-semibold text-white">On-Chain Fee Shareholders</p>
+            </div>
+            {isLocked ? (
+              <div className="flex items-center gap-1 text-green-400">
+                <Lock className="h-3 w-3" />
+                <span className="text-xs">Locked</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1 text-amber-400">
+                <Unlock className="h-3 w-3" />
+                <span className="text-xs">Editable</span>
+              </div>
+            )}
           </div>
-        </div>
-      ) : (
-        <div className="flex items-center gap-3 rounded-xl bg-green-500/5 border border-green-500/20 p-4 mb-8">
-          <CheckCircle className="h-5 w-5 text-green-400" />
-          <div>
-            <p className="text-sm font-semibold text-green-400">
-              ✅ Verified — Trading fees are being received on-chain.
-            </p>
+          <div className="space-y-2">
+            {shareholders.map((sh: any, i: number) => {
+              const isPumpGrant = sh.address === PLATFORM_WALLET;
+              return (
+                <div key={i} className={`flex items-center justify-between rounded-lg px-4 py-3 ${
+                  isPumpGrant ? 'bg-green-500/5 border border-green-500/20' : 'bg-[#0a0a0a] border border-[#1a1a1a]'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    {isPumpGrant && <Shield className="h-4 w-4 text-green-400" />}
+                    <code className={`text-sm font-mono ${isPumpGrant ? 'text-green-400' : 'text-purple-400'}`}>
+                      {isPumpGrant ? 'PumpGrant Wallet' : `${sh.address.slice(0, 10)}...${sh.address.slice(-6)}`}
+                    </code>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className={`text-sm font-bold ${isPumpGrant ? 'text-green-400' : 'text-gray-400'}`}>
+                      {sh.percentage}
+                    </span>
+                    <span className="text-xs text-gray-600">({sh.shareBps} bps)</span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
@@ -223,6 +283,150 @@ export default function CampaignPage() {
             <div className="text-center py-8 text-gray-600 text-sm">No claims yet</div>
           )}
         </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── On-Chain Verification Banner ─── */
+function OnChainVerificationBanner({ verifyData, verifying, campaign, onRefresh }: {
+  verifyData: any;
+  verifying: boolean;
+  campaign: any;
+  onRefresh: () => void;
+}) {
+  // Loading state
+  if (verifying && !verifyData) {
+    return (
+      <div className="flex items-center gap-3 rounded-xl bg-blue-500/5 border border-blue-500/20 p-4 mb-8">
+        <Loader2 className="h-5 w-5 text-blue-400 animate-spin" />
+        <div>
+          <p className="text-sm font-semibold text-blue-400">Verifying on-chain...</p>
+          <p className="text-xs text-gray-500 mt-0.5">Reading fee sharing config from Solana</p>
+        </div>
+      </div>
+    );
+  }
+
+  // No verify data yet — fallback to campaign status
+  if (!verifyData) {
+    if (campaign.status === 'pending') {
+      return (
+        <div className="flex items-center gap-3 rounded-xl bg-amber-500/5 border border-amber-500/20 p-4 mb-8">
+          <Clock className="h-5 w-5 text-amber-400" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-amber-400">⏳ Pending Verification</p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Waiting for on-chain verification. Make sure fee sharing is set up on pump.fun.
+            </p>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="flex items-center gap-3 rounded-xl bg-green-500/5 border border-green-500/20 p-4 mb-8">
+        <CheckCircle className="h-5 w-5 text-green-400" />
+        <p className="text-sm font-semibold text-green-400">✅ Verified</p>
+      </div>
+    );
+  }
+
+  const onChainVerified = verifyData.valid === true;
+  const configExists = verifyData.config_exists === true;
+  const isLocked = verifyData.is_locked === true;
+  const isFallback = verifyData.fallback === true;
+
+  // Verified on-chain
+  if (onChainVerified) {
+    return (
+      <div className="rounded-xl bg-green-500/5 border border-green-500/20 p-4 mb-8">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <CheckCircle className="h-5 w-5 text-green-400" />
+            <div>
+              <p className="text-sm font-semibold text-green-400">
+                ✅ Verified on-chain — Trading fees directed to PumpGrant
+              </p>
+              <div className="flex items-center gap-3 mt-1">
+                {isLocked && (
+                  <span className="inline-flex items-center gap-1 text-xs text-green-400/70">
+                    <Lock className="h-3 w-3" /> Locked — Cannot be changed
+                  </span>
+                )}
+                {!isLocked && configExists && (
+                  <span className="inline-flex items-center gap-1 text-xs text-amber-400/70">
+                    <Unlock className="h-3 w-3" /> Not locked yet
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+          <button
+            onClick={onRefresh}
+            disabled={verifying}
+            className="text-gray-600 hover:text-white transition-colors p-1"
+            title="Re-verify on-chain"
+          >
+            <RefreshCw className={`h-4 w-4 ${verifying ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Config exists but PumpGrant not a shareholder
+  if (configExists && !onChainVerified) {
+    return (
+      <div className="rounded-xl bg-red-500/5 border border-red-500/20 p-4 mb-8">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Shield className="h-5 w-5 text-red-400" />
+            <div>
+              <p className="text-sm font-semibold text-red-400">
+                ❌ Fee sharing exists but PumpGrant wallet is not a shareholder
+              </p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                The token has a fee sharing config, but it doesn&apos;t include PumpGrant&apos;s wallet.
+                {isLocked && ' The config is locked and cannot be changed.'}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={onRefresh}
+            disabled={verifying}
+            className="text-gray-600 hover:text-white transition-colors p-1"
+          >
+            <RefreshCw className={`h-4 w-4 ${verifying ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // No config — pending or fallback
+  return (
+    <div className="rounded-xl bg-amber-500/5 border border-amber-500/20 p-4 mb-8">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Clock className="h-5 w-5 text-amber-400" />
+          <div>
+            <p className="text-sm font-semibold text-amber-400">
+              {isFallback ? '⚠️ On-chain verification unavailable' : '⏳ No fee sharing config found'}
+            </p>
+            <p className="text-xs text-gray-500 mt-0.5">
+              {isFallback
+                ? 'Could not read on-chain data. Will retry automatically.'
+                : 'Fee sharing has not been configured yet. Set it up on pump.fun to verify.'}
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={onRefresh}
+          disabled={verifying}
+          className="text-gray-600 hover:text-white transition-colors p-1"
+        >
+          <RefreshCw className={`h-4 w-4 ${verifying ? 'animate-spin' : ''}`} />
+        </button>
       </div>
     </div>
   );
