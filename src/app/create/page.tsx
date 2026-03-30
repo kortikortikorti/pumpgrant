@@ -551,15 +551,20 @@ function CreateTokenFlow({ onCreated, onBack }: { onCreated: (data: any) => void
       setStatusMsg('Sending transaction to Solana...');
       
       const txSignature = await connection.sendRawTransaction(signedTx.serialize(), {
-        skipPreflight: false,
-        maxRetries: 3,
+        skipPreflight: true,
+        maxRetries: 5,
+        preflightCommitment: 'confirmed',
       });
 
       console.log('[create] Transaction sent:', txSignature);
       setStatusMsg('Confirming transaction...');
 
       // Wait for confirmation
-      const confirmation = await connection.confirmTransaction(txSignature, 'confirmed');
+      const confirmation = await connection.confirmTransaction({
+        signature: txSignature,
+        blockhash: signedTx.message.recentBlockhash,
+        lastValidBlockHeight: (await connection.getLatestBlockhash()).lastValidBlockHeight,
+      }, 'confirmed');
       
       if (confirmation.value.err) {
         throw new Error(`Transaction failed: ${JSON.stringify(confirmation.value.err)}`);

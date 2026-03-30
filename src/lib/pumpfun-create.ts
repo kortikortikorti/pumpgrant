@@ -5,7 +5,7 @@
  * that can be serialized and sent to the client for wallet signing.
  */
 
-import { Connection, Keypair, PublicKey, TransactionInstruction, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
+import { Connection, Keypair, PublicKey, TransactionInstruction, TransactionMessage, VersionedTransaction, ComputeBudgetProgram } from '@solana/web3.js';
 import { PumpSdk, OnlinePumpSdk, bondingCurvePda, PUMP_PROGRAM_ID } from '@pump-fun/pump-sdk';
 import BN from 'bn.js';
 
@@ -128,10 +128,19 @@ export async function buildCreateTokenTransaction(params: CreateTokenParams): Pr
     instructions = [createIx, extendIx];
   }
 
-  console.log(`[PumpCreate] Built ${instructions.length} instructions`);
+  // Add priority fee instructions for faster confirmation
+  const priorityFeeIx = ComputeBudgetProgram.setComputeUnitPrice({
+    microLamports: 100000, // 0.0001 SOL priority fee
+  });
+  const computeUnitsIx = ComputeBudgetProgram.setComputeUnitLimit({
+    units: 300000,
+  });
+  instructions = [priorityFeeIx, computeUnitsIx, ...instructions];
+
+  console.log(`[PumpCreate] Built ${instructions.length} instructions (including priority fees)`);
 
   // Get recent blockhash for the transaction
-  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+  const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('finalized');
 
   // Build a VersionedTransaction (v0)
   const messageV0 = new TransactionMessage({
