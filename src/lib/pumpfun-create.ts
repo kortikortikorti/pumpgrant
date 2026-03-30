@@ -80,8 +80,31 @@ export async function buildCreateTokenTransaction(params: CreateTokenParams): Pr
     // Convert SOL to lamports (BN)
     const solLamports = new BN(Math.floor(initialBuyAmountSol * 1e9));
     
-    // amount = 0 means the buy instruction uses solAmount to determine how many tokens to buy
-    // The on-chain program calculates token amount from the bonding curve
+    // Calculate token amount from SOL using the bonding curve formula
+    // Initial reserves from Global: virtualSolReserves and virtualTokenReserves
+    // tokenAmount = (solAmount * virtualTokenReserves) / (virtualSolReserves + solAmount)
+    const { getBuyTokenAmountFromSolAmount } = require('@pump-fun/pump-sdk');
+    const { newBondingCurve } = require('@pump-fun/pump-sdk');
+    
+    // Create a fresh bonding curve with initial values from global
+    const initialBondingCurve = newBondingCurve({
+      virtualTokenReserves: global.initialVirtualTokenReserves,
+      virtualSolReserves: global.initialVirtualSolReserves,
+      realTokenReserves: global.initialRealTokenReserves,
+      realSolReserves: new BN(0),
+      tokenTotalSupply: global.tokenTotalSupply,
+      complete: false,
+    });
+    
+    const tokenAmount = getBuyTokenAmountFromSolAmount({
+      bondingCurve: initialBondingCurve,
+      global,
+      buyAmountSol: solLamports,
+    });
+    
+    console.log(`[PumpCreate] SOL amount: ${solLamports.toString()} lamports`);
+    console.log(`[PumpCreate] Token amount: ${tokenAmount.toString()}`);
+    
     instructions = await pumpSdk.createV2AndBuyInstructions({
       global,
       mint,
@@ -90,7 +113,7 @@ export async function buildCreateTokenTransaction(params: CreateTokenParams): Pr
       uri: tokenUri,
       creator: user,
       user,
-      amount: new BN(0),
+      amount: tokenAmount,
       solAmount: solLamports,
       mayhemMode: isMayhemMode,
       cashback: false,
