@@ -1,4 +1,4 @@
-# 🐸 PumpGrant
+# 💊 PumpGrant
 
 **Fund anyone on Reddit through pump.fun token trading fees.**
 
