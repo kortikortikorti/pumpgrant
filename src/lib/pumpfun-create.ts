@@ -81,29 +81,17 @@ export async function buildCreateTokenTransaction(params: CreateTokenParams): Pr
     const solLamports = new BN(Math.floor(initialBuyAmountSol * 1e9));
     
     // Calculate token amount from SOL using the bonding curve formula
-    // Initial reserves from Global: virtualSolReserves and virtualTokenReserves
-    // tokenAmount = (solAmount * virtualTokenReserves) / (virtualSolReserves + solAmount)
-    const { getBuyTokenAmountFromSolAmount } = require('@pump-fun/pump-sdk');
-    const { newBondingCurve } = require('@pump-fun/pump-sdk');
+    // tokenAmount = (solLamports * virtualTokenReserves) / (virtualSolReserves + solLamports)
+    const virtualTokenReserves = new BN(global.initialVirtualTokenReserves.toString());
+    const virtualSolReserves = new BN(global.initialVirtualSolReserves.toString());
     
-    // Create a fresh bonding curve with initial values from global
-    const initialBondingCurve = newBondingCurve({
-      virtualTokenReserves: global.initialVirtualTokenReserves,
-      virtualSolReserves: global.initialVirtualSolReserves,
-      realTokenReserves: global.initialRealTokenReserves,
-      realSolReserves: new BN(0),
-      tokenTotalSupply: global.tokenTotalSupply,
-      complete: false,
-    });
+    const tokenAmount = solLamports.mul(virtualTokenReserves).div(virtualSolReserves.add(solLamports));
     
-    const tokenAmount = getBuyTokenAmountFromSolAmount({
-      bondingCurve: initialBondingCurve,
-      global,
-      buyAmountSol: solLamports,
-    });
+    // Apply 1% slippage (reduce token amount slightly)
+    const tokenAmountWithSlippage = tokenAmount.mul(new BN(99)).div(new BN(100));
     
     console.log(`[PumpCreate] SOL amount: ${solLamports.toString()} lamports`);
-    console.log(`[PumpCreate] Token amount: ${tokenAmount.toString()}`);
+    console.log(`[PumpCreate] Token amount: ${tokenAmountWithSlippage.toString()}`);
     
     instructions = await pumpSdk.createV2AndBuyInstructions({
       global,
@@ -113,7 +101,7 @@ export async function buildCreateTokenTransaction(params: CreateTokenParams): Pr
       uri: tokenUri,
       creator: user,
       user,
-      amount: tokenAmount,
+      amount: tokenAmountWithSlippage,
       solAmount: solLamports,
       mayhemMode: isMayhemMode,
       cashback: false,
